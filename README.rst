@@ -1,6 +1,20 @@
+memcached client for asyncio
+============================
+
 aiomemcache is a minimal, pure python client for memcached, kestrel, etc.
 
-The API looks very similar to the other memcache clients:
+
+Requirements
+------------
+
+- Python >= 3.3
+- asyncio https://pypi.python.org/pypi/asyncio/0.2
+
+
+Getting started
+---------------
+
+The API looks very similar to the other memcache clients::
 
     import aiomemcache
     mc = aiomemcache.Client("127.0.0.1", 11211, connect_timeout=5)
