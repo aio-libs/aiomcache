@@ -8,7 +8,7 @@ Requirements
 ------------
 
 - Python >= 3.3
-- asyncio https://pypi.python.org/pypi/asyncio/0.2
+- asyncio https://pypi.python.org/pypi/asyncio/
 
 
 Getting started
