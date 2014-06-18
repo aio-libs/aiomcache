@@ -1,0 +1,16 @@
+language: python
+
+python:
+  - "3.3"
+  - "3.4"
+
+install:
+  - python setup.py install
+  - pip install pyflakes
+  - pip install pep8
+  #- pip install coveralls
+
+script:
+  - pep8 aiomcache
+  - pyflakes .
+  - python runtests.py -v
