@@ -1,7 +1,10 @@
 memcached client for asyncio
 ============================
 
-aiomcache is a minimal, pure python client for memcached.
+asyncio (PEP 3156) library to work with memcached.
+
+.. image:: https://travis-ci.org/aio-libs/aiomcache.svg?branch=master
+   :target: https://travis-ci.org/aio-libs/aiomcache
 
 
 Requirements
