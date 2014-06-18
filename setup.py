@@ -16,7 +16,7 @@ def read(f):
     return open(os.path.join(os.path.dirname(__file__), f)).read().strip()
 
 
-setup(name='aiomemcache',
+setup(name='aiomcache',
       version=version,
       description=('Minimal pure python memcached client'),
       long_description='\n\n'.join((read('README.rst'), read('CHANGES.txt'))),
@@ -29,7 +29,7 @@ setup(name='aiomemcache',
           'Topic :: Internet :: WWW/HTTP'],
       author='Nikolay Kim',
       author_email='fafhrd91@gmail.com',
-      url='https://github.com/fafhrd91/aiomemcache/',
+      url='https://github.com/KeepSafe/aiomcache/',
       license='BSD',
       packages=find_packages(),
       install_requires = install_requires,

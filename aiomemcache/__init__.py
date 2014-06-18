@@ -1,3 +1,0 @@
-# placeholder
-
-from .aiomemcache import *

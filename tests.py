@@ -4,8 +4,8 @@ from pprint import pprint
 
 
 def main():
-    import aiomemcache
-    client = aiomemcache.Client('localhost')
+    import aiomcache
+    client = aiomcache.Client('localhost')
 
     # set
     yield from client.set(b'test', b'1')
@@ -28,7 +28,7 @@ def main():
 
 
 if __name__ == '__main__':
-    cov = coverage.coverage(branch=True, source=['aiomemcache'])
+    cov = coverage.coverage(branch=True, source=['aiomcache'])
     cov.start()
 
     loop = asyncio.get_event_loop()
