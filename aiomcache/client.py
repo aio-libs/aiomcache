@@ -5,6 +5,7 @@ __all__ = ['Client']
 import asyncio
 import functools
 import re
+import aiomcache.constants as const
 from .pool import MemcachePool
 from .exceptions import ClientException, ValidationException
 
@@ -62,23 +63,14 @@ class Client(object):
     @acquire
     def delete(self, reader, writer, key):
         """Deletes a key/value pair from the server."""
-        # req  - delete <key> [noreply]\r\n
-        # resp - DELETED\r\n
-        #        or
-        #        NOT_FOUND\r\n
         assert self._validate_key(key)
 
-        writer.write(b'delete ' + key + b'\r\n')
+        command = b'delete ' + key + b'\r\n'
+        response = yield from self._execute_simple_command(
+            reader, writer, command)
 
-        line = b''
-        resp = bytearray()
-
-        while not line.endswith(b'\r\n'):
-            line = yield from reader.readline()
-            resp.extend(line)
-
-        if resp not in (b'DELETED\r\n', b'NOT_FOUND\r\n'):
-            raise ClientException('Memcached delete failed', resp)
+        if response[:-2] not in (const.DELETED, const.NOT_FOUND):
+            raise ClientException('Memcached delete failed', response)
 
     @acquire
     def get(self, reader, writer, key, default=None):
@@ -209,3 +201,144 @@ class Client(object):
             resp = yield from reader.readline()
 
         return result
+
+    @acquire
+    def _storage_command(self, reader, writer, command, key, value,
+                         flags=0, exptime=0):
+        assert self._validate_key(key)
+        templ = '{} {} {:d} {:d} {} \r\n{}\r\n'
+
+        _cmd = templ.format(command, key, flags, exptime, len(value), value)
+        _cmd = _cmd.encode('utf-8')
+        resp = yield from self._execute_simple_command(reader, writer, _cmd)
+
+        if resp not in (const.STORED, const.NOT_STORED):
+            raise ClientException('stats {} failed'.format(command), resp)
+        return True if b'STORED\r\n' else False
+
+    @acquire
+    def add(self, reader, writer, key, value, flags=0, exptime=0):
+        return (yield from self._storage_command(
+            reader, writer, 'add', key, value, flags, exptime))
+
+    @acquire
+    def replace(self, reader, writer, key, value, flags=0, exptime=0):
+        return (yield from self._storage_command(
+            reader, writer, 'replace', key, value, flags, exptime))
+
+    @acquire
+    def append(self, reader, writer, key, value, flags=0, exptime=0):
+        return (yield from self._storage_command(
+            reader, writer, 'append', key, value, flags, exptime))
+
+    @acquire
+    def prepend(self, reader, writer, key, value, flags=0, exptime=0):
+        return (yield from self._storage_command(
+            reader, writer, 'prepend', key, value, flags, exptime))
+
+
+    # Increment/Decrement
+    # -------------------
+    @acquire
+    def incr(self, reader, writer, key, increment=1):
+        assert self._validate_key(key)
+
+        _cmd = 'incr {} {}\r\n'.format(key, increment).encode('utf-8')
+        resp = yield from self._execute_simple_command(reader, writer, _cmd)
+        if resp[:-2] == const.NOT_FOUND:
+            resp = None
+        return int(resp)
+
+    @acquire
+    def decr(self, reader, writer, key, decrement=1):
+        assert self._validate_key(key)
+
+        _cmd = 'decr {} {}\r\n'.format(key, decrement).encode('utf-8')
+        resp = yield from self._execute_simple_command(reader, writer, _cmd)
+        if resp[:-2] == const.NOT_FOUND:
+            resp = None
+        return int(resp)
+
+    @acquire
+    def touch(self, reader, writer, key, exptime):
+        assert self._validate_key(key)
+
+        _cmd = 'touch {} {}\r\n'.format(key, exptime).encode('utf-8')
+        resp = yield from self._execute_simple_command(reader, writer, _cmd)
+
+        if resp == const.TOUCHED:
+            return True
+        elif resp == const.NOT_FOUND:
+            return False
+        else:
+            raise ClientException('Memcached touch failed', resp)
+
+    # Other commands
+    # ---------------
+    @asyncio.coroutine
+    def _execute_simple_command(self, reader, writer, raw_command):
+        response, line = bytearray(), b''
+
+        writer.write(raw_command)
+        yield from writer.drain()
+
+        while not line.endswith(b'\r\n'):
+            line = yield from reader.readline()
+            response.extend(line)
+        return response
+
+    @acquire
+    def version(self, reader, writer):
+        """Current version of the server.
+
+        :return: version string for the server."""
+
+        command = b'version\r\n'
+        response = yield from self._execute_simple_command(reader, writer, command)
+
+        version, number = response[:-2].split()
+        if const.VERSION != version:
+            raise ClientException('Memcached version failed', response)
+        return number
+
+    @acquire
+    def quit(self, reader, writer):
+        """Upon receiving this command, the server closes the
+        connection. However, the client may also simply close the connection
+        when it no longer needs it, without issuing this command."""
+        raise NotImplementedError
+        yield from writer('quit\r\n')
+        self.close()
+
+    @acquire
+    def flush_all(self, reader, writer):
+        """This is a command with an optional numeric argument. It always
+        succeeds, and the server sends "OK\r\n" in response (unless "noreply"
+        is given as the last parameter). Its effect is to invalidate all
+        existing items immediately (by default) or after the expiration
+        specified."""
+
+        command = b'flush_all\r\n'
+        response = yield from self._execute_simple_command(
+            reader, writer, command)
+
+        if const.OK != response[:-2]:
+            raise ClientException('Memcached flush_all failed', response)
+
+    @acquire
+    def verbosity(self, reader, writer, level):
+        """This is a command with a numeric argument. It always succeeds,
+        and the server sends "OK" in response. Its effect is to set the
+        verbosity level of the logging output.
+
+        :param level: ``int`` log level
+        """
+        assert isinstance(level, int), "Log level must be *int* vlaue"
+
+        command = 'verbosity {}\r\n'.format(level).encode('utf-8')
+        response = yield from self._execute_simple_command(
+            reader, writer, command)
+
+        if const.OK != response[:-2]:
+            raise ClientException('Memcached verbosity failed', response)
+

@@ -12,6 +12,6 @@ Usage example::
 from .client import *
 from .exceptions import *
 
-__all__ = (client.__all__ +
-           exceptions.__all__
-)
+# __all__ = (client.__all__ +
+#            exceptions.__all__
+# )

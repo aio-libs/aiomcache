@@ -27,5 +27,18 @@ dev:
 flake:
 	$(FLAKE) --exclude=./venv ./
 
+clean:
+	find . -name __pycache__ |xargs rm -rf
+	find . -type f -name '*.py[co]' -delete
+	find . -type f -name '*~' -delete
+	find . -type f -name '.*~' -delete
+	find . -type f -name '@*' -delete
+	find . -type f -name '#*#' -delete
+	find . -type f -name '*.orig' -delete
+	find . -type f -name '*.rej' -delete
+	rm -f .coverage
+	rm -rf coverage
+	rm -rf docs/_build
 
-.PHONY: all build update dev flake
+
+.PHONY: all build clean update dev flake
