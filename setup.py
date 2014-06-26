@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 version = '0.1'
 
-if sys.version_info >= (3,4):
+if sys.version_info >= (3, 4):
     install_requires = []
 else:
     install_requires = ['asyncio']

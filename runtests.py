@@ -92,9 +92,8 @@ def load_modules(basedir, suffix='.py', *, verbose=False):
             if os.path.isdir(path):
                 files.extend(list_dir('{}{}.'.format(prefix, name), path))
             else:
-                if (name != '__init__.py' and
-                    name.endswith(suffix) and
-                    not name.startswith(('.', '_'))):
+                if (name != '__init__.py' and name.endswith(suffix) and
+                        not name.startswith(('.', '_'))):
                     files.append(('{}{}'.format(prefix, name[:-3]), path))
 
         return files
@@ -239,9 +238,7 @@ def runtests():
     runner_factory = TestRunner if findleaks else unittest.TextTestRunner
 
     if args.coverage:
-        cov = coverage.coverage(branch=True,
-                                source=['aioredis'],
-                                )
+        cov = coverage.coverage(branch=True, source=['aiomcache'],)
         cov.start()
 
     finder = TestsFinder(args.testsdir, includes, excludes,

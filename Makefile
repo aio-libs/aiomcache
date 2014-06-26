@@ -1,31 +1,31 @@
 # Some simple testing tasks (sorry, UNIX only).
 
-PYTHON=venv/bin/python3.4
-PSERVE=venv/bin/gunicorn --paste
-PIP=venv/bin/pip
-FLAKE=venv/bin/flake8
-FLAGS=
+PYTHON=python3
+PYFLAKES=pyflakes
 
+FILTER=
 
-update:
-	$(PYTHON) ./setup.py develop
+doc:
+	cd docs && make html
+	echo "open file://`pwd`/docs/_build/html/index.html"
 
-build:
-	python3.4 -m venv venv
-	curl -O https://bitbucket.org/pypa/setuptools/raw/bootstrap/ez_setup.py
-	venv/bin/python ez_setup.py
-	rm -f ./ez_setup.py
-	rm -f ./setuptools*.zip
-	venv/bin/easy_install pip
-
-	$(PYTHON) ./setup.py develop
-
-dev:
-	$(PIP) install flake8 nose coverage
-	$(PYTHON) ./setup.py develop
+pep:
+	pep8 aiomcache examples tests
 
 flake:
-	$(FLAKE) --exclude=./venv ./
+	$(PYFLAKES) .
+
+test:
+	$(PYTHON) runtests.py $(FILTER)
+
+vtest: pep flake
+	$(PYTHON) runtests.py -v $(FILTER)
+
+testloop: pep flake
+	$(PYTHON) runtests.py --forever $(FILTER)
+
+cov cover coverage: pep flake
+	$(PYTHON) runtests.py --coverage $(FILTER)
 
 clean:
 	find . -name __pycache__ |xargs rm -rf
@@ -40,5 +40,4 @@ clean:
 	rm -rf coverage
 	rm -rf docs/_build
 
-
-.PHONY: all build clean update dev flake
+.PHONY: all pep test vtest testloop cov clean
