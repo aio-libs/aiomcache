@@ -41,7 +41,7 @@ class Client(object):
     _valid_key_re = re.compile(b'^[\x21-\x7e]{1,250}$')
 
     def _validate_key(self, key):
-        if not isinstance(key, bytes): # avoid bugs subtle and otherwise
+        if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
             raise ValidationException('key must be bytes', key)
 
         m = self._valid_key_re.match(key)
@@ -119,7 +119,7 @@ class Client(object):
         while line != b'END\r\n':
             terms = line.split()
 
-            if len(terms) == 4 and terms[0] == b'VALUE': # exists
+            if len(terms) == 4 and terms[0] == b'VALUE':  # exists
                 key = terms[1]
                 flags = int(terms[2])
                 length = int(terms[3])
@@ -211,7 +211,7 @@ class Client(object):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         """
-        flags = 0 # TODO: fix when exception removed
+        flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             reader, writer, b'set', key, value, flags, exptime)
         return resp
@@ -226,7 +226,7 @@ class Client(object):
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         """
-        flags = 0 # TODO: fix when exception removed
+        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             reader, writer, b'add', key, value, flags, exptime))
 
@@ -240,7 +240,7 @@ class Client(object):
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         """
-        flags = 0 # TODO: fix when exception removed
+        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             reader, writer, b'replace', key, value, flags, exptime))
 
@@ -253,7 +253,7 @@ class Client(object):
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         """
-        flags = 0 # TODO: fix when exception removed
+        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             reader, writer, b'append', key, value, flags, exptime))
 
@@ -266,7 +266,7 @@ class Client(object):
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         """
-        flags = 0 # TODO: fix when exception removed
+        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             reader, writer, b'prepend', key, value, flags, exptime))
 
