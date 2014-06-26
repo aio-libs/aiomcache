@@ -6,6 +6,7 @@ eggs
 sources
 dist
 venv
+htmlcov
 .installed.cfg
 develop-eggs
 var/*

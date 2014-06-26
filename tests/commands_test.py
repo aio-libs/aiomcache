@@ -1,41 +1,39 @@
-from functools import wraps
 import asyncio
-import unittest
 import aiomcache
 
-from aiomcache.exceptions import ClientException
+from unittest.mock import patch
+
+from aiomcache.exceptions import ClientException, ValidationException
+from ._testutil import BaseTest, run_until_complete
 
 
-def run_until_complete(fun):
-    if not asyncio.iscoroutinefunction(fun):
-        fun = asyncio.coroutine(fun)
-
-    @wraps(fun)
-    def wrapper(test, *args, **kw):
-        loop = test.loop
-        ret = loop.run_until_complete(fun(test, *args, **kw))
-        return ret
-    return wrapper
-
-
-class ConnectionCommandsTest(unittest.TestCase):
+class ConnectionCommandsTest(BaseTest):
     """Base test case for unittests.
     """
 
     def setUp(self):
-        asyncio.set_event_loop(None)
-
-        self.loop = asyncio.new_event_loop()
-        self.mcache = aiomcache.Client('localhost', loop=self.loop)
+        super().setUp()
+        self.mcache = aiomcache.Client(
+            'localhost', loop=self.loop)
 
     def tearDown(self):
-        self.loop.close()
-        del self.loop
+        self.mcache.close()
+        super().tearDown()
 
     @run_until_complete
     def test_version(self):
         version = yield from self.mcache.version()
-        self.assertTrue(version)
+        stats = yield from self.mcache.stats()
+        self.assertTrue(version, stats[b'version'])
+
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
+
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'Error\r\n')
+            patched.return_value = fut
+
+            yield from self.mcache.version()
 
     @run_until_complete
     def test_flush_all(self):
@@ -50,19 +48,51 @@ class ConnectionCommandsTest(unittest.TestCase):
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, None)
 
-    @unittest.skip("Compare with stats")
-    @run_until_complete
-    def test_verbosity(self):
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
 
-        yield from self.mcache.verbosity(1)
-        self.assertTrue(True)
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'Error\r\n')
+            patched.return_value = fut
+
+            yield from self.mcache.flush_all()
 
     @run_until_complete
-    def test_set(self):
+    def test_set_get(self):
         key, value = b'key:set', b'1'
         yield from self.mcache.set(key, value)
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, value)
+
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
+
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'Error\r\n')
+            patched.return_value = fut
+
+            yield from self.mcache.set(key, value)
+
+    @run_until_complete
+    def test_multi_get(self):
+        key1, value1 = b'key:multi_get:1', b'1'
+        key2, value2 = b'key:multi_get:2', b'1'
+        yield from self.mcache.set(key1, value1)
+        yield from self.mcache.set(key2, value2)
+        test_value = yield from self.mcache.multi_get(key1, key2)
+        self.assertEqual(test_value, [value1, value2])
+
+        test_value = yield from self.mcache.multi_get()
+        self.assertEqual(test_value, [])
+
+    @run_until_complete
+    def test_multi_get_doubling_keys(self):
+        key, value = b'key:multi_get:3', b'1'
+        yield from self.mcache.set(key, value)
+
+        with self.assertRaises(ClientException):
+            test_value = yield from self.mcache.multi_get(key, key)
+            self.assertEqual(test_value, [])
 
     @run_until_complete
     def test_set_expire(self):
@@ -76,6 +106,17 @@ class ConnectionCommandsTest(unittest.TestCase):
 
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, None)
+
+    @run_until_complete
+    def test_set_errors(self):
+        key, value = b'key:set', b'1'
+        yield from self.mcache.set(key, value, exptime=1)
+
+        with self.assertRaises(ValidationException):
+            yield from self.mcache.set(key, value, exptime=-1)
+
+        with self.assertRaises(ValidationException):
+            yield from self.mcache.set(key, value, exptime=3.14)
 
     @run_until_complete
     def test_add(self):
@@ -159,6 +200,14 @@ class ConnectionCommandsTest(unittest.TestCase):
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, None)
 
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'Error\r\n')
+            patched.return_value = fut
+
+            yield from self.mcache.delete(key)
+
     @run_until_complete
     def test_delete_key_not_exists(self):
         is_deleted = yield from self.mcache.delete(b'not:key')
@@ -218,3 +267,35 @@ class ConnectionCommandsTest(unittest.TestCase):
 
         with self.assertRaises(ClientException):
             yield from self.mcache.decr(key, 3.14)
+
+    @run_until_complete
+    def test_stats(self):
+        stats = yield from self.mcache.stats()
+        self.assertTrue(b'pid' in stats)
+
+    @run_until_complete
+    def test_touch(self):
+        key, value = b'key:touch:1', b'17'
+        yield from self.mcache.set(key, value)
+
+        test_value = yield from self.mcache.touch(key, 1)
+        self.assertEqual(test_value, True)
+
+        test_value = yield from self.mcache.get(key)
+        self.assertEqual(test_value, value)
+
+        yield from asyncio.sleep(1, loop=self.loop)
+
+        test_value = yield from self.mcache.get(key)
+        self.assertEqual(test_value, None)
+
+        test_value = yield from self.mcache.touch(b'not:' + key, 1)
+        self.assertEqual(test_value, False)
+
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'Error\r\n')
+            patched.return_value = fut
+
+            yield from self.mcache.touch(b'not:' + key, 1)

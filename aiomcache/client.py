@@ -56,46 +56,21 @@ class Client(object):
 
         return key
 
+    @asyncio.coroutine
+    def _execute_simple_command(self, reader, writer, raw_command):
+        response, line = bytearray(), b''
+
+        writer.write(raw_command)
+        yield from writer.drain()
+
+        while not line.endswith(b'\r\n'):
+            line = yield from reader.readline()
+            response.extend(line)
+        return response[:-2]
+
     def close(self):
         """Closes the socket if its open."""
         self._pool.clear()
-
-    @acquire
-    def delete(self, reader, writer, key):
-        """Deletes a key/value pair from the server.
-        :param key: is the key of the item the client wishes
-        the server to delete.
-        :return: True if case values was deleted or False to indicate
-        that the item with this key was not found.
-        """
-        assert self._validate_key(key)
-
-        command = b'delete ' + key + b'\r\n'
-        response = yield from self._execute_simple_command(
-            reader, writer, command)
-
-        if response not in (const.DELETED, const.NOT_FOUND):
-            raise ClientException('Memcached delete failed', response)
-        return response == const.DELETED
-
-    @acquire
-    def get(self, reader, writer, key, default=None):
-        """Gets a single value from the server.
-        Returns default value if there is no value.
-        """
-        result = yield from self._multi_get(reader, writer, key)
-        if result:
-            return result[0]
-        else:
-            return default
-
-    @acquire
-    def multi_get(self, reader, writer, *keys):
-        """Takes a list of keys and returns a list of values.
-
-        Raises ``ValidationException``, ``ClientException``, and socket errors
-        """
-        return (yield from self._multi_get(reader, writer, *keys))
 
     @asyncio.coroutine
     def _multi_get(self, reader, writer, *keys):
@@ -150,6 +125,43 @@ class Client(object):
             response = [received.get(k) for k in keys if k in received]
 
         return response
+
+    @acquire
+    def delete(self, reader, writer, key):
+        """Deletes a key/value pair from the server.
+        :param key: is the key of the item the client wishes
+        the server to delete.
+        :return: True if case values was deleted or False to indicate
+        that the item with this key was not found.
+        """
+        assert self._validate_key(key)
+
+        command = b'delete ' + key + b'\r\n'
+        response = yield from self._execute_simple_command(
+            reader, writer, command)
+
+        if response not in (const.DELETED, const.NOT_FOUND):
+            raise ClientException('Memcached delete failed', response)
+        return response == const.DELETED
+
+    @acquire
+    def get(self, reader, writer, key, default=None):
+        """Gets a single value from the server.
+        Returns default value if there is no value.
+        """
+        result = yield from self._multi_get(reader, writer, key)
+        if result:
+            return result[0]
+        else:
+            return default
+
+    @acquire
+    def multi_get(self, reader, writer, *keys):
+        """Takes a list of keys and returns a list of values.
+
+        Raises ``ValidationException``, ``ClientException``, and socket errors
+        """
+        return (yield from self._multi_get(reader, writer, *keys))
 
     @acquire
     def stats(self, reader, writer, args=None):
@@ -331,23 +343,12 @@ class Client(object):
         """
         assert self._validate_key(key)
 
-        _cmd = 'touch {} {}\r\n'.format(key, exptime).encode('utf-8')
-        resp = yield from self._execute_simple_command(reader, writer, _cmd)
+        _cmd = b' '.join([b'touch', key, str(exptime).encode('utf-8')])
+        cmd = _cmd + b'\r\n'
+        resp = yield from self._execute_simple_command(reader, writer, cmd)
         if resp not in (const.TOUCHED, const.NOT_FOUND):
             raise ClientException('Memcached touch failed', resp)
         return resp == const.TOUCHED
-
-    @asyncio.coroutine
-    def _execute_simple_command(self, reader, writer, raw_command):
-        response, line = bytearray(), b''
-
-        writer.write(raw_command)
-        yield from writer.drain()
-
-        while not line.endswith(b'\r\n'):
-            line = yield from reader.readline()
-            response.extend(line)
-        return response[:-2]
 
     @acquire
     def version(self, reader, writer):
@@ -358,19 +359,19 @@ class Client(object):
         command = b'version\r\n'
         response = yield from self._execute_simple_command(
             reader, writer, command)
-        version, number = response.split()
-        if const.VERSION != version:
+        if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
+        version, number = response.split()
         return number
 
-    @acquire
-    def quit(self, reader, writer):
-        """Upon receiving this command, the server closes the
-        connection. However, the client may also simply close the connection
-        when it no longer needs it, without issuing this command."""
-        raise NotImplementedError
-        yield from writer('quit\r\n')
-        self.close()
+    # @acquire
+    # def quit(self, reader, writer):
+    #     """Upon receiving this command, the server closes the
+    #     connection. However, the client may also simply close the connection
+    #     when it no longer needs it, without issuing this command."""
+    #     command = b'quit\r\n'
+    #     yield from self._execute_simple_command(reader, writer, command)
+    #     # self.close()
 
     @acquire
     def flush_all(self, reader, writer):
@@ -387,19 +388,19 @@ class Client(object):
         if const.OK != response:
             raise ClientException('Memcached flush_all failed', response)
 
-    @acquire
-    def verbosity(self, reader, writer, level):
-        """This is a command with a numeric argument. It always succeeds,
-        and the server sends "OK" in response. Its effect is to set the
-        verbosity level of the logging output.
-
-        :param level: ``int`` log level
-        """
-        assert isinstance(level, int), "Log level must be *int* vlaue"
-
-        command = 'verbosity {}\r\n'.format(level).encode('utf-8')
-        response = yield from self._execute_simple_command(
-            reader, writer, command)
-
-        if const.OK != response:
-            raise ClientException('Memcached verbosity failed', response)
+    # @acquire
+    # def verbosity(self, reader, writer, level):
+    #     """This is a command with a numeric argument. It always succeeds,
+    #     and the server sends "OK" in response. Its effect is to set the
+    #     verbosity level of the logging output.
+    #
+    #     :param level: ``int`` log level
+    #     """
+    #     assert isinstance(level, int), "Log level must be *int* vlaue"
+    #
+    #     command = 'verbosity {}\r\n'.format(level).encode('utf-8')
+    #     response = yield from self._execute_simple_command(
+    #         reader, writer, command)
+    #
+    #     if const.OK != response:
+    #         raise ClientException('Memcached verbosity failed', response)
