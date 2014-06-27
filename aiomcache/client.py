@@ -5,7 +5,7 @@ __all__ = ['Client']
 import asyncio
 import functools
 import re
-import aiomcache.constants as const
+from . import constants as const
 from .pool import MemcachePool
 from .exceptions import ClientException, ValidationException
 
@@ -68,9 +68,10 @@ class Client(object):
             response.extend(line)
         return response[:-2]
 
+    @asyncio.coroutine
     def close(self):
-        """Closes the socket if its open."""
-        self._pool.clear()
+        """Closes the sockets if its open."""
+        yield from self._pool.clear()
 
     @asyncio.coroutine
     def _multi_get(self, reader, writer, *keys):
@@ -129,8 +130,8 @@ class Client(object):
     @acquire
     def delete(self, reader, writer, key):
         """Deletes a key/value pair from the server.
-        :param key: is the key of the item the client wishes
-        the server to delete.
+
+        :param key: is the key to delete.
         :return: True if case values was deleted or False to indicate
         that the item with this key was not found.
         """
@@ -299,8 +300,7 @@ class Client(object):
 
         :param key: is the key of the item the client wishes to change
         :param increment: is the amount by which the client
-        wants to increase the item. It is a decimal representation
-        of a 64-bit unsigned integer.
+        wants to increase the item.
         :return: ``int`` new value of the item's data,
         after the increment or ``None`` to indicate the item with
         this value was not found
@@ -318,8 +318,7 @@ class Client(object):
 
         :param key: is the key of the item the client wishes to change
         :param decrement: is the amount by which the client
-        wants to decrease the item. It is a decimal representation
-        of a 64-bit unsigned integer.
+        wants to decrease the item.
         :return: ``int`` new value of the item's data,
         after the increment or ``None`` to indicate the item with
         this value was not found
@@ -336,8 +335,8 @@ class Client(object):
 
         :param key: is the key to update expiration time
         :param exptime: is expiration time. Works the same as with the
-            update commands (set/add/etc). This replaces the existing
-            expiration time.
+        update commands (set/add/etc). This replaces the existing
+        expiration time.
 
         NOTE: ``reader``, ``writer`` added implicitly.
         """
@@ -364,6 +363,19 @@ class Client(object):
         version, number = response.split()
         return number
 
+    @acquire
+    def flush_all(self, reader, writer):
+        """This is a command with an optional numeric argument. Its effect is
+        to invalidate all existing items immediately (by default) or
+        after the expiration specified."""
+
+        command = b'flush_all\r\n'
+        response = yield from self._execute_simple_command(
+            reader, writer, command)
+
+        if const.OK != response:
+            raise ClientException('Memcached flush_all failed', response)
+
     # @acquire
     # def quit(self, reader, writer):
     #     """Upon receiving this command, the server closes the
@@ -372,21 +384,6 @@ class Client(object):
     #     command = b'quit\r\n'
     #     yield from self._execute_simple_command(reader, writer, command)
     #     # self.close()
-
-    @acquire
-    def flush_all(self, reader, writer):
-        """This is a command with an optional numeric argument. It always
-        succeeds, and the server sends "OK\r\n" in response (unless "noreply"
-        is given as the last parameter). Its effect is to invalidate all
-        existing items immediately (by default) or after the expiration
-        specified."""
-
-        command = b'flush_all\r\n'
-        response = yield from self._execute_simple_command(
-            reader, writer, command)
-
-        if const.OK != response:
-            raise ClientException('Memcached flush_all failed', response)
 
     # @acquire
     # def verbosity(self, reader, writer, level):

@@ -8,16 +8,13 @@ from ._testutil import BaseTest, run_until_complete
 
 
 class ConnectionCommandsTest(BaseTest):
-    """Base test case for unittests.
-    """
 
     def setUp(self):
         super().setUp()
-        self.mcache = aiomcache.Client(
-            'localhost', loop=self.loop)
+        self.mcache = aiomcache.Client('localhost', loop=self.loop)
 
     def tearDown(self):
-        self.mcache.close()
+        yield from self.mcache.close()
         super().tearDown()
 
     @run_until_complete
@@ -28,11 +25,9 @@ class ConnectionCommandsTest(BaseTest):
 
         with patch.object(self.mcache, '_execute_simple_command') as patched, \
                 self.assertRaises(ClientException):
-
             fut = asyncio.Future(loop=self.loop)
             fut.set_result(b'Error\r\n')
             patched.return_value = fut
-
             yield from self.mcache.version()
 
     @run_until_complete
@@ -47,15 +42,6 @@ class ConnectionCommandsTest(BaseTest):
         # make sure value does not exists
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, None)
-
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
-
-            fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'Error\r\n')
-            patched.return_value = fut
-
-            yield from self.mcache.flush_all()
 
     @run_until_complete
     def test_set_get(self):
@@ -299,3 +285,8 @@ class ConnectionCommandsTest(BaseTest):
             patched.return_value = fut
 
             yield from self.mcache.touch(b'not:' + key, 1)
+
+    @run_until_complete
+    def test_close(self):
+        yield from self.mcache.close()
+        self.assertEqual(self.mcache._pool.size(), 0)
