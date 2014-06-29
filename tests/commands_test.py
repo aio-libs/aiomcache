@@ -21,12 +21,12 @@ class ConnectionCommandsTest(BaseTest):
     def test_version(self):
         version = yield from self.mcache.version()
         stats = yield from self.mcache.stats()
-        self.assertTrue(version, stats[b'version'])
+        self.assertEqual(version, stats[b'version'])
 
         with patch.object(self.mcache, '_execute_simple_command') as patched, \
                 self.assertRaises(ClientException):
             fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'Error\r\n')
+            fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
             yield from self.mcache.version()
 
@@ -37,7 +37,7 @@ class ConnectionCommandsTest(BaseTest):
         # make sure value exists
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, value)
-
+        # flush data
         yield from self.mcache.flush_all()
         # make sure value does not exists
         test_value = yield from self.mcache.get(key)
@@ -54,7 +54,7 @@ class ConnectionCommandsTest(BaseTest):
                 self.assertRaises(ClientException):
 
             fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'Error\r\n')
+            fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
 
             yield from self.mcache.set(key, value)
@@ -62,7 +62,7 @@ class ConnectionCommandsTest(BaseTest):
     @run_until_complete
     def test_multi_get(self):
         key1, value1 = b'key:multi_get:1', b'1'
-        key2, value2 = b'key:multi_get:2', b'1'
+        key2, value2 = b'key:multi_get:2', b'2'
         yield from self.mcache.set(key1, value1)
         yield from self.mcache.set(key2, value2)
         test_value = yield from self.mcache.multi_get(key1, key2)
@@ -84,7 +84,6 @@ class ConnectionCommandsTest(BaseTest):
     def test_set_expire(self):
         key, value = b'key:set', b'1'
         yield from self.mcache.set(key, value, exptime=1)
-
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, value)
 
@@ -114,7 +113,7 @@ class ConnectionCommandsTest(BaseTest):
 
         test_value = yield from self.mcache.add(b'not:' + key, b'2')
         self.assertEqual(test_value, True)
-        # make sure value exists
+
         test_value = yield from self.mcache.get(b'not:' + key)
         self.assertEqual(test_value, b'2')
 
@@ -189,7 +188,7 @@ class ConnectionCommandsTest(BaseTest):
         with patch.object(self.mcache, '_execute_simple_command') as patched, \
                 self.assertRaises(ClientException):
             fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'Error\r\n')
+            fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
 
             yield from self.mcache.delete(key)
@@ -203,9 +202,6 @@ class ConnectionCommandsTest(BaseTest):
     def test_incr(self):
         key, value = b'key:incr:1', b'1'
         yield from self.mcache.set(key, value)
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
 
         test_value = yield from self.mcache.incr(key, 2)
         self.assertEqual(test_value, 3)
@@ -229,14 +225,10 @@ class ConnectionCommandsTest(BaseTest):
     def test_decr(self):
         key, value = b'key:decr:1', b'17'
         yield from self.mcache.set(key, value)
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
 
         test_value = yield from self.mcache.decr(key, 2)
         self.assertEqual(test_value, 15)
 
-        # make sure value exists
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, b'15')
 
@@ -281,7 +273,7 @@ class ConnectionCommandsTest(BaseTest):
         with patch.object(self.mcache, '_execute_simple_command') as patched, \
                 self.assertRaises(ClientException):
             fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'Error\r\n')
+            fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
 
             yield from self.mcache.touch(b'not:' + key, 1)

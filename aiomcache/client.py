@@ -148,19 +148,22 @@ class Client(object):
     @acquire
     def get(self, reader, writer, key, default=None):
         """Gets a single value from the server.
-        Returns default value if there is no value.
+
+        :param key: ``bytes``, is the key for the item being fetched
+        :param default: default value if there is no value.
+        :return: ``bytes``, is the data for this specified key.
         """
         result = yield from self._multi_get(reader, writer, key)
-        if result:
-            return result[0]
-        else:
-            return default
+        return result[0] if result else default
 
     @acquire
     def multi_get(self, reader, writer, *keys):
         """Takes a list of keys and returns a list of values.
 
-        Raises ``ValidationException``, ``ClientException``, and socket errors
+        :param keys: ``list`` keys for the item being fetched.
+        :return: ``list`` of values for the specified keys.
+        :raises:``ValidationException``, ``ClientException``,
+        and socket errors
         """
         return (yield from self._multi_get(reader, writer, *keys))
 
@@ -223,6 +226,12 @@ class Client(object):
     def set(self, reader, writer, key, value, exptime=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int``, is expiration time. If it's 0, the
+        item never expires.
+        :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
@@ -234,10 +243,11 @@ class Client(object):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
-        :param key: ``bytes`` is the key of the item.
-        :param value: data to store.
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
+        :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
@@ -248,10 +258,11 @@ class Client(object):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
-        :param key: ``bytes`` is the key of the item.
-        :param value: data to store.
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
+        :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
@@ -261,10 +272,11 @@ class Client(object):
     def append(self, reader, writer, key, value, exptime=0):
         """Add data to an existing key after existing data
 
-        :param key: ``bytes`` is the key of the item.
-        :param value: data to store.
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
+        :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
@@ -274,10 +286,11 @@ class Client(object):
     def prepend(self, reader, writer, key, value, exptime=0):
         """Add data to an existing key before existing data
 
-        :param key: ``bytes`` is the key of the item.
-        :param value: data to store.
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
+        :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
@@ -289,7 +302,8 @@ class Client(object):
         cmd = b' '.join([command, key, delta_byte]) + b'\r\n'
         resp = yield from self._execute_simple_command(reader, writer, cmd)
         if not resp.isdigit() or resp == const.NOT_FOUND:
-            raise ClientException('Memcached flush_all failed', resp)
+            raise ClientException(
+                'Memcached {} command failed'.format(str(command)), resp)
         return int(resp) if resp.isdigit() else None
 
     @acquire
@@ -298,10 +312,11 @@ class Client(object):
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param key: is the key of the item the client wishes to change
-        :param increment: is the amount by which the client
+        :param key: ``bytes``, is the key of the item the client wishes
+        to change
+        :param increment: ``int``, is the amount by which the client
         wants to increase the item.
-        :return: ``int`` new value of the item's data,
+        :return: ``int``, new value of the item's data,
         after the increment or ``None`` to indicate the item with
         this value was not found
         """
@@ -316,8 +331,9 @@ class Client(object):
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param key: is the key of the item the client wishes to change
-        :param decrement: is the amount by which the client
+        :param key: ``bytes``, is the key of the item the client wishes
+        to change
+        :param decrement: ``int``, is the amount by which the client
         wants to decrease the item.
         :return: ``int`` new value of the item's data,
         after the increment or ``None`` to indicate the item with
@@ -330,15 +346,13 @@ class Client(object):
 
     @acquire
     def touch(self, reader, writer, key, exptime):
-        """The "touch" command is used to update the expiration time of
+        """The command is used to update the expiration time of
         an existing item without fetching it.
 
-        :param key: is the key to update expiration time
-        :param exptime: is expiration time. Works the same as with the
-        update commands (set/add/etc). This replaces the existing
+        :param key: ``bytes``, is the key to update expiration time
+        :param exptime: ``int``, is expiration time. This replaces the existing
         expiration time.
-
-        NOTE: ``reader``, ``writer`` added implicitly.
+        :return: ``bool``, True in case of success.
         """
         assert self._validate_key(key)
 
@@ -353,7 +367,8 @@ class Client(object):
     def version(self, reader, writer):
         """Current version of the server.
 
-        :return: version string for the server."""
+        :return: ``bytes``, memcached version for current the server.
+        """
 
         command = b'version\r\n'
         response = yield from self._execute_simple_command(
@@ -365,10 +380,7 @@ class Client(object):
 
     @acquire
     def flush_all(self, reader, writer):
-        """This is a command with an optional numeric argument. Its effect is
-        to invalidate all existing items immediately (by default) or
-        after the expiration specified."""
-
+        """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
         response = yield from self._execute_simple_command(
             reader, writer, command)
