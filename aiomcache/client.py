@@ -16,7 +16,7 @@ def acquire(func):
     def wrapper(self, *args, **kwargs):
         conn = yield from self._pool.acquire()
         try:
-            return (yield from func(self, conn[0], conn[1], *args, **kwargs))
+            return (yield from func(self, conn, *args, **kwargs))
         except Exception as exc:
             conn[0].set_exception(exc)
             raise
@@ -57,14 +57,14 @@ class Client(object):
         return key
 
     @asyncio.coroutine
-    def _execute_simple_command(self, reader, writer, raw_command):
+    def _execute_simple_command(self, conn, raw_command):
         response, line = bytearray(), b''
 
-        writer.write(raw_command)
-        yield from writer.drain()
+        conn.writer.write(raw_command)
+        yield from conn.writer.drain()
 
         while not line.endswith(b'\r\n'):
-            line = yield from reader.readline()
+            line = yield from conn.reader.readline()
             response.extend(line)
         return response[:-2]
 
@@ -74,7 +74,7 @@ class Client(object):
         yield from self._pool.clear()
 
     @asyncio.coroutine
-    def _multi_get(self, reader, writer, *keys):
+    def _multi_get(self, conn, *keys):
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
@@ -87,10 +87,10 @@ class Client(object):
         if len(set(keys)) != len(keys):
             raise ClientException('duplicate keys passed to multi_get')
 
-        writer.write(b'get ' + b' '.join(keys) + b'\r\n')
+        conn.writer.write(b'get ' + b' '.join(keys) + b'\r\n')
 
         received = {}
-        line = yield from reader.readline()
+        line = yield from conn.reader.readline()
 
         while line != b'END\r\n':
             terms = line.split()
@@ -103,7 +103,7 @@ class Client(object):
                 if flags != 0:
                     raise ClientException('received non zero flags')
 
-                val = (yield from reader.readexactly(length+2))[:-2]
+                val = (yield from conn.reader.readexactly(length+2))[:-2]
                 if key in received:
                     raise ClientException('duplicate results from server')
 
@@ -111,7 +111,7 @@ class Client(object):
             else:
                 raise ClientException('get failed', line)
 
-            line = yield from reader.readline()
+            line = yield from conn.reader.readline()
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
@@ -128,7 +128,7 @@ class Client(object):
         return response
 
     @acquire
-    def delete(self, reader, writer, key):
+    def delete(self, conn, key):
         """Deletes a key/value pair from the server.
 
         :param key: is the key to delete.
@@ -138,26 +138,25 @@ class Client(object):
         assert self._validate_key(key)
 
         command = b'delete ' + key + b'\r\n'
-        response = yield from self._execute_simple_command(
-            reader, writer, command)
+        response = yield from self._execute_simple_command(conn, command)
 
         if response not in (const.DELETED, const.NOT_FOUND):
             raise ClientException('Memcached delete failed', response)
         return response == const.DELETED
 
     @acquire
-    def get(self, reader, writer, key, default=None):
+    def get(self, conn, key, default=None):
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
         """
-        result = yield from self._multi_get(reader, writer, key)
+        result = yield from self._multi_get(conn, key)
         return result[0] if result else default
 
     @acquire
-    def multi_get(self, reader, writer, *keys):
+    def multi_get(self, conn, *keys):
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -165,10 +164,10 @@ class Client(object):
         :raises:``ValidationException``, ``ClientException``,
         and socket errors
         """
-        return (yield from self._multi_get(reader, writer, *keys))
+        return (yield from self._multi_get(conn, *keys))
 
     @acquire
-    def stats(self, reader, writer, args=None):
+    def stats(self, conn, args=None):
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
         # resp - STAT <name> <value>\r\n (one per result)
@@ -176,11 +175,11 @@ class Client(object):
         if args is None:
             args = b''
 
-        writer.write(b''.join((b'stats ', args, b'\r\n')))
+        conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
 
         result = {}
 
-        resp = yield from reader.readline()
+        resp = yield from conn.reader.readline()
         while resp != b'END\r\n':
             terms = resp.split()
 
@@ -191,12 +190,12 @@ class Client(object):
             else:
                 raise ClientException('stats failed', resp)
 
-            resp = yield from reader.readline()
+            resp = yield from conn.reader.readline()
 
         return result
 
     @asyncio.coroutine
-    def _storage_command(self, reader, writer, command, key, value,
+    def _storage_command(self, conn, command, key, value,
                          flags=0, exptime=0):
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
@@ -216,14 +215,14 @@ class Client(object):
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args) + b'\r\n'
         cmd = _cmd + value + b'\r\n'
-        resp = yield from self._execute_simple_command(reader, writer, cmd)
+        resp = yield from self._execute_simple_command(conn, cmd)
 
         if resp not in (const.STORED, const.NOT_STORED):
             raise ClientException('stats {} failed'.format(command), resp)
         return resp == const.STORED
 
     @acquire
-    def set(self, reader, writer, key, value, exptime=0):
+    def set(self, conn, key, value, exptime=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -235,11 +234,11 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
-            reader, writer, b'set', key, value, flags, exptime)
+            conn, b'set', key, value, flags, exptime)
         return resp
 
     @acquire
-    def add(self, reader, writer, key, value, exptime=0):
+    def add(self, conn, key, value, exptime=0):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -251,10 +250,10 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
-            reader, writer, b'add', key, value, flags, exptime))
+            conn, b'add', key, value, flags, exptime))
 
     @acquire
-    def replace(self, reader, writer, key, value, exptime=0):
+    def replace(self, conn, key, value, exptime=0):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -266,10 +265,10 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
-            reader, writer, b'replace', key, value, flags, exptime))
+            conn, b'replace', key, value, flags, exptime))
 
     @acquire
-    def append(self, reader, writer, key, value, exptime=0):
+    def append(self, conn, key, value, exptime=0):
         """Add data to an existing key after existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -280,10 +279,10 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
-            reader, writer, b'append', key, value, flags, exptime))
+            conn, b'append', key, value, flags, exptime))
 
     @acquire
-    def prepend(self, reader, writer, key, value, exptime=0):
+    def prepend(self, conn, key, value, exptime=0):
         """Add data to an existing key before existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -294,20 +293,20 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
-            reader, writer, b'prepend', key, value, flags, exptime))
+            conn, b'prepend', key, value, flags, exptime))
 
     @asyncio.coroutine
-    def _incr_decr(self, reader, writer, command, key, delta):
+    def _incr_decr(self, conn, command, key, delta):
         delta_byte = str(delta).encode('utf-8')
         cmd = b' '.join([command, key, delta_byte]) + b'\r\n'
-        resp = yield from self._execute_simple_command(reader, writer, cmd)
+        resp = yield from self._execute_simple_command(conn, cmd)
         if not resp.isdigit() or resp == const.NOT_FOUND:
             raise ClientException(
                 'Memcached {} command failed'.format(str(command)), resp)
         return int(resp) if resp.isdigit() else None
 
     @acquire
-    def incr(self, reader, writer, key, increment=1):
+    def incr(self, conn, key, increment=1):
         """Command is used to change data for some item in-place,
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -322,11 +321,11 @@ class Client(object):
         """
         assert self._validate_key(key)
         resp = yield from self._incr_decr(
-            reader, writer, b'incr', key, increment)
+            conn, b'incr', key, increment)
         return resp
 
     @acquire
-    def decr(self, reader, writer, key, decrement=1):
+    def decr(self, conn, key, decrement=1):
         """Command is used to change data for some item in-place,
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -341,11 +340,11 @@ class Client(object):
         """
         assert self._validate_key(key)
         resp = yield from self._incr_decr(
-            reader, writer, b'decr', key, decrement)
+            conn, b'decr', key, decrement)
         return resp
 
     @acquire
-    def touch(self, reader, writer, key, exptime):
+    def touch(self, conn, key, exptime):
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
@@ -358,13 +357,13 @@ class Client(object):
 
         _cmd = b' '.join([b'touch', key, str(exptime).encode('utf-8')])
         cmd = _cmd + b'\r\n'
-        resp = yield from self._execute_simple_command(reader, writer, cmd)
+        resp = yield from self._execute_simple_command(conn, cmd)
         if resp not in (const.TOUCHED, const.NOT_FOUND):
             raise ClientException('Memcached touch failed', resp)
         return resp == const.TOUCHED
 
     @acquire
-    def version(self, reader, writer):
+    def version(self, conn):
         """Current version of the server.
 
         :return: ``bytes``, memcached version for current the server.
@@ -372,44 +371,18 @@ class Client(object):
 
         command = b'version\r\n'
         response = yield from self._execute_simple_command(
-            reader, writer, command)
+            conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
         version, number = response.split()
         return number
 
     @acquire
-    def flush_all(self, reader, writer):
+    def flush_all(self, conn):
         """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
         response = yield from self._execute_simple_command(
-            reader, writer, command)
+            conn, command)
 
         if const.OK != response:
             raise ClientException('Memcached flush_all failed', response)
-
-    # @acquire
-    # def quit(self, reader, writer):
-    #     """Upon receiving this command, the server closes the
-    #     connection. However, the client may also simply close the connection
-    #     when it no longer needs it, without issuing this command."""
-    #     command = b'quit\r\n'
-    #     yield from self._execute_simple_command(reader, writer, command)
-    #     # self.close()
-
-    # @acquire
-    # def verbosity(self, reader, writer, level):
-    #     """This is a command with a numeric argument. It always succeeds,
-    #     and the server sends "OK" in response. Its effect is to set the
-    #     verbosity level of the logging output.
-    #
-    #     :param level: ``int`` log level
-    #     """
-    #     assert isinstance(level, int), "Log level must be *int* vlaue"
-    #
-    #     command = 'verbosity {}\r\n'.format(level).encode('utf-8')
-    #     response = yield from self._execute_simple_command(
-    #         reader, writer, command)
-    #
-    #     if const.OK != response:
-    #         raise ClientException('Memcached verbosity failed', response)

@@ -1,6 +1,10 @@
 import asyncio
+from collections import namedtuple
 
 __all__ = ['MemcachePool']
+
+
+_connection = namedtuple('connection', ['reader', 'writer'])
 
 
 class MemcachePool:
@@ -18,12 +22,12 @@ class MemcachePool:
     def clear(self):
         """Clear pool connections."""
         while not self._pool.empty():
-            reader, writer = yield from self._pool.get()
-            self._do_close(reader, writer)
+            conn = yield from self._pool.get()
+            self._do_close(conn)
 
-    def _do_close(self, reader, writer):
-        reader.feed_eof()
-        writer.close()
+    def _do_close(self, conn):
+        conn.reader.feed_eof()
+        conn.writer.close()
 
     @asyncio.coroutine
     def acquire(self):
@@ -39,9 +43,9 @@ class MemcachePool:
         conn = None
         while not conn:
             if not self._pool.empty():
-                reader, writer = yield from self._pool.get()
-                if reader.at_eof() or reader.exception():
-                    writer.close()
+                _conn = yield from self._pool.get()
+                if _conn.reader.at_eof() or _conn.reader.exception():
+                    self._do_close(_conn)
                     conn = None
 
             if conn is None:
@@ -53,24 +57,23 @@ class MemcachePool:
     def release(self, conn):
         """Releases connection back to the pool.
 
-        :param conn: ``tuple`` (reader, writer)
+        :param conn: ``namedtuple`` (reader, writer)
         """
-        reader, writer = conn
-        self._in_use.remove((reader, writer))
+        self._in_use.remove(conn)
 
-        if reader.at_eof() or reader.exception():
-            self._do_close(reader, writer)
+        if conn.reader.at_eof() or conn.reader.exception():
+            self._do_close(conn)
         else:
             try:
-                self._pool.put_nowait((reader, writer))
+                self._pool.put_nowait(conn)
             except asyncio.QueueFull:
-                self._do_close(reader, writer)
+                self._do_close(conn)
 
     @asyncio.coroutine
     def _create_new_conn(self):
         reader, writer = yield from asyncio.open_connection(
             self._host, self._port, loop=self._loop)
-        return reader, writer
+        return _connection(reader, writer)
 
     def size(self):
         return len(self._in_use) + self._pool.qsize()

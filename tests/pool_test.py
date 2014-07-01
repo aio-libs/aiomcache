@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from aiomcache.pool import MemcachePool
+from aiomcache.pool import MemcachePool, _connection
 from ._testutil import run_until_complete
 
 
@@ -26,10 +26,10 @@ class PoolTest(unittest.TestCase):
     def test_pool_acquire_release(self):
         pool = MemcachePool('localhost', 11211,
                             minsize=1, maxsize=5, loop=self.loop)
-        reader, writer = yield from pool.acquire()
-        self.assertIsInstance(reader, asyncio.StreamReader)
-        self.assertIsInstance(writer, asyncio.StreamWriter)
-        pool.release((reader, writer))
+        conn = yield from pool.acquire()
+        self.assertIsInstance(conn.reader, asyncio.StreamReader)
+        self.assertIsInstance(conn.writer, asyncio.StreamWriter)
+        pool.release(conn)
 
     @run_until_complete
     def test_pool_acquire_release2(self):
@@ -40,11 +40,11 @@ class PoolTest(unittest.TestCase):
         # put dead connection to the pool
         writer.close()
         reader.feed_eof()
-
-        yield from pool._pool.put((reader, writer))
-        reader, writer = yield from pool.acquire()
-        self.assertIsInstance(reader, asyncio.StreamReader)
-        self.assertIsInstance(writer, asyncio.StreamWriter)
+        conn = _connection(reader, writer)
+        yield from pool._pool.put(conn)
+        conn = yield from pool.acquire()
+        self.assertIsInstance(conn.reader, asyncio.StreamReader)
+        self.assertIsInstance(conn.writer, asyncio.StreamWriter)
 
     @run_until_complete
     def test_pool_clear(self):
@@ -63,7 +63,7 @@ class PoolTest(unittest.TestCase):
         conn = yield from pool.acquire()
 
         # put garbage to the pool make it look like full
-        mocked_conns = [(0, 0), (1, 1)]
+        mocked_conns = [_connection(0, 0), _connection(1, 1)]
         yield from pool._pool.put(mocked_conns[0])
         yield from pool._pool.put(mocked_conns[1])
 
