@@ -43,6 +43,13 @@ class ConnectionCommandsTest(BaseTest):
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, None)
 
+        with patch.object(self.mcache, '_execute_simple_command') as patched, \
+                self.assertRaises(ClientException):
+            fut = asyncio.Future(loop=self.loop)
+            fut.set_result(b'SERVER_ERROR error\r\n')
+            patched.return_value = fut
+            yield from self.mcache.flush_all()
+
     @run_until_complete
     def test_set_get(self):
         key, value = b'key:set', b'1'
