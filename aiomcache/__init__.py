@@ -9,9 +9,7 @@ Usage example::
     yield from mc.delete("another_key")
 """
 
-from .client import *
-from .exceptions import *
+from .client import Client
+from .exceptions import ClientException, ValidationException
 
-__all__ = (client.__all__ +
-           exceptions.__all__
-)
+__all__ = ('Client', 'ClientException', 'ValidationException')

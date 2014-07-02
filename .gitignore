@@ -6,6 +6,7 @@ eggs
 sources
 dist
 venv
+htmlcov
 .installed.cfg
 develop-eggs
 var/*
@@ -20,5 +21,6 @@ var/*
 .DS_Store
 .coverage
 .noseids
+.idea
 docs/_build/
 nosetests.xml
