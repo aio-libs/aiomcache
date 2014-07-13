@@ -115,7 +115,7 @@ class Client(object):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
-        return [received.get(k) for k in keys if k in received]
+        return [received.get(k, None) for k in keys]
 
     @acquire
     def delete(self, conn, key):

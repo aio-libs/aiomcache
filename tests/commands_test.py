@@ -56,6 +56,8 @@ class ConnectionCommandsTest(BaseTest):
         yield from self.mcache.set(key, value)
         test_value = yield from self.mcache.get(key)
         self.assertEqual(test_value, value)
+        test_value = yield from self.mcache.get(b'not:' + key)
+        self.assertEqual(test_value, None)
 
         with patch.object(self.mcache, '_execute_simple_command') as patched, \
                 self.assertRaises(ClientException):
@@ -75,6 +77,8 @@ class ConnectionCommandsTest(BaseTest):
         test_value = yield from self.mcache.multi_get(key1, key2)
         self.assertEqual(test_value, [value1, value2])
 
+        test_value = yield from self.mcache.multi_get(b'not' + key1, key2)
+        self.assertEqual(test_value, [None, value2])
         test_value = yield from self.mcache.multi_get()
         self.assertEqual(test_value, [])
 
