@@ -115,17 +115,7 @@ class Client(object):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
-
-        # memcache client is used by other servers besides memcached.
-        # In the case of kestrel, responses coming back to not necessarily
-        # match the requests going out. Thus we just ignore the key name
-        # if there is only one key and return what we received.
-        if len(keys) == 1 and len(received) == 1:
-            response = list(received.values())
-        else:
-            response = [received.get(k) for k in keys if k in received]
-
-        return response
+        return [received.get(k) for k in keys if k in received]
 
     @acquire
     def delete(self, conn, key):
