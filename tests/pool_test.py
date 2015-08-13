@@ -71,3 +71,18 @@ class PoolTest(unittest.TestCase):
         self.assertEqual(pool.size(), 3)
         pool.release(conn)
         self.assertEqual(pool.size(), 2)
+
+    @run_until_complete
+    def test_acquire_dont_create_new_connection_if_have_conn_in_pool(self):
+        pool = MemcachePool('localhost', 11211,
+                            minsize=1, maxsize=5, loop=self.loop)
+        self.assertEqual(pool.size(), 0)
+
+        # Add a valid connection
+        _conn = yield from pool._create_new_conn()
+        yield from pool._pool.put(_conn)
+        self.assertEqual(pool.size(), 1)
+
+        conn = yield from pool.acquire()
+        self.assertIs(conn, _conn)
+        self.assertEqual(pool.size(), 1)
