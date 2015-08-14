@@ -1,13 +1,14 @@
-"""memcached client."""
-
-__all__ = ['Client']
-
 import asyncio
 import functools
 import re
 from . import constants as const
 from .pool import MemcachePool
 from .exceptions import ClientException, ValidationException
+
+
+"""memcached client."""
+
+__all__ = ['Client']
 
 
 def acquire(func):
