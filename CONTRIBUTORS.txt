@@ -1,4 +1,5 @@
 Contributors
 ------------
 
+Maarten Draijer
 Nikolay Novik
