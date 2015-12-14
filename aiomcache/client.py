@@ -12,6 +12,7 @@ __all__ = ['Client']
 
 def acquire(func):
 
+    @asyncio.coroutine
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         conn = yield from self._pool.acquire()
