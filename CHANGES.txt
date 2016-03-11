@@ -1,6 +1,13 @@
 CHANGES
 =======
 
+0.3 (12-15-2016)
+----------------
+
+- Dockerize tests
+
+- Reuse memcached connections in Client Pool #4
+
 0.2 (12-15-2015)
 ----------------
 
