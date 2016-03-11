@@ -1,31 +1,20 @@
 # Some simple testing tasks (sorry, UNIX only).
 
-PYTHON=python3
-PYFLAKES=pyflakes
-
-FILTER=
-
 doc:
 	cd docs && make html
 	echo "open file://`pwd`/docs/_build/html/index.html"
 
-pep:
-	pep8 aiomcache examples tests
-
 flake:
-	$(PYFLAKES) .
+	flake8 aiomcache tests examples
 
-test:
-	$(PYTHON) runtests.py $(FILTER)
+test: flake
+	py.test tests
 
-vtest: pep flake
-	$(PYTHON) runtests.py -v $(FILTER)
 
-testloop: pep flake
-	$(PYTHON) runtests.py --forever $(FILTER)
+cov cover coverage: flake
+	py.test --cov=aiopg --cov-report=html --cov-report=term tests
+	@echo "open file://`pwd`/htmlcov/index.html"
 
-cov cover coverage: pep flake
-	$(PYTHON) runtests.py --coverage $(FILTER)
 
 clean:
 	find . -name __pycache__ |xargs rm -rf
@@ -40,4 +29,4 @@ clean:
 	rm -rf coverage
 	rm -rf docs/_build
 
-.PHONY: all pep test vtest testloop cov clean
+.PHONY: all flake test cov clean

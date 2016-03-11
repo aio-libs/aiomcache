@@ -1,0 +1,5 @@
+docker-py
+pytest
+pytest-sugar
+python-memcached
+flake8
