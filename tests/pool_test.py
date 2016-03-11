@@ -57,3 +57,19 @@ def test_pool_is_full(mcache_params, loop):
     assert pool.size() == 3
     pool.release(conn)
     assert pool.size() == 2
+
+
+@pytest.mark.run_loop
+def test_acquire_dont_create_new_connection_if_have_conn_in_pool(mcache_params,
+                                                                 loop):
+    pool = MemcachePool(minsize=1, maxsize=5, loop=loop, **mcache_params)
+    assert pool.size() == 0
+
+    # Add a valid connection
+    _conn = yield from pool._create_new_conn()
+    yield from pool._pool.put(_conn)
+    assert pool.size() == 1
+
+    conn = yield from pool.acquire()
+    assert conn is _conn
+    assert pool.size() == 1
