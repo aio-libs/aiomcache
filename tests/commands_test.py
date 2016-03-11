@@ -1,295 +1,300 @@
 import asyncio
-import aiomcache
-
-from unittest.mock import patch
+import pytest
+from unittest import mock
 
 from aiomcache.exceptions import ClientException, ValidationException
-from ._testutil import BaseTest, run_until_complete
 
 
-class ConnectionCommandsTest(BaseTest):
+@pytest.mark.run_loop
+def test_version(mcache, loop):
+    version = yield from mcache.version()
+    stats = yield from mcache.stats()
+    assert version == stats[b'version']
 
-    def setUp(self):
-        super().setUp()
-        self.mcache = aiomcache.Client('localhost', loop=self.loop)
-
-    def tearDown(self):
-        yield from self.mcache.close()
-        super().tearDown()
-
-    @run_until_complete
-    def test_version(self):
-        version = yield from self.mcache.version()
-        stats = yield from self.mcache.stats()
-        self.assertEqual(version, stats[b'version'])
-
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
-            fut = asyncio.Future(loop=self.loop)
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        with pytest.raises(ClientException):
+            fut = asyncio.Future(loop=loop)
             fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
-            yield from self.mcache.version()
+            yield from mcache.version()
 
-    @run_until_complete
-    def test_flush_all(self):
-        key, value = b'key:flush_all', b'flush_all_value'
-        yield from self.mcache.set(key, value)
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
-        # flush data
-        yield from self.mcache.flush_all()
-        # make sure value does not exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, None)
 
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
-            fut = asyncio.Future(loop=self.loop)
+@pytest.mark.run_loop
+def test_flush_all(mcache, loop):
+    key, value = b'key:flush_all', b'flush_all_value'
+    yield from mcache.set(key, value)
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == value
+    # flush data
+    yield from mcache.flush_all()
+    # make sure value does not exists
+    test_value = yield from mcache.get(key)
+    assert test_value is None
+
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        with pytest.raises(ClientException):
+            fut = asyncio.Future(loop=loop)
             fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
-            yield from self.mcache.flush_all()
+            yield from mcache.flush_all()
 
-    @run_until_complete
-    def test_set_get(self):
-        key, value = b'key:set', b'1'
-        yield from self.mcache.set(key, value)
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
-        test_value = yield from self.mcache.get(b'not:' + key)
-        self.assertEqual(test_value, None)
 
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
+@pytest.mark.run_loop
+def test_set_get(mcache, loop):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value)
+    test_value = yield from mcache.get(key)
+    assert test_value == value
+    test_value = yield from mcache.get(b'not:' + key)
+    assert test_value is None
 
-            fut = asyncio.Future(loop=self.loop)
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        with pytest.raises(ClientException):
+            fut = asyncio.Future(loop=loop)
             fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
+            yield from mcache.set(key, value)
 
-            yield from self.mcache.set(key, value)
 
-    @run_until_complete
-    def test_multi_get(self):
-        key1, value1 = b'key:multi_get:1', b'1'
-        key2, value2 = b'key:multi_get:2', b'2'
-        yield from self.mcache.set(key1, value1)
-        yield from self.mcache.set(key2, value2)
-        test_value = yield from self.mcache.multi_get(key1, key2)
-        self.assertEqual(test_value, [value1, value2])
+@pytest.mark.run_loop
+def test_multi_get(mcache):
+    key1, value1 = b'key:multi_get:1', b'1'
+    key2, value2 = b'key:multi_get:2', b'2'
+    yield from mcache.set(key1, value1)
+    yield from mcache.set(key2, value2)
+    test_value = yield from mcache.multi_get(key1, key2)
+    assert test_value == [value1, value2]
 
-        test_value = yield from self.mcache.multi_get(b'not' + key1, key2)
-        self.assertEqual(test_value, [None, value2])
-        test_value = yield from self.mcache.multi_get()
-        self.assertEqual(test_value, [])
+    test_value = yield from mcache.multi_get(b'not' + key1, key2)
+    assert test_value == [None, value2]
+    test_value = yield from mcache.multi_get()
+    assert test_value == []
 
-    @run_until_complete
-    def test_multi_get_doubling_keys(self):
-        key, value = b'key:multi_get:3', b'1'
-        yield from self.mcache.set(key, value)
 
-        with self.assertRaises(ClientException):
-            test_value = yield from self.mcache.multi_get(key, key)
-            self.assertEqual(test_value, [])
+@pytest.mark.run_loop
+def test_multi_get_doubling_keys(mcache):
+    key, value = b'key:multi_get:3', b'1'
+    yield from mcache.set(key, value)
 
-    @run_until_complete
-    def test_set_expire(self):
-        key, value = b'key:set', b'1'
-        yield from self.mcache.set(key, value, exptime=1)
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
+    with pytest.raises(ClientException):
+        test_value = yield from mcache.multi_get(key, key)
+        assert test_value == []
 
-        yield from asyncio.sleep(1, loop=self.loop)
 
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, None)
+@pytest.mark.run_loop
+def test_set_expire(mcache, loop):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value, exptime=1)
+    test_value = yield from mcache.get(key)
+    assert test_value == value
 
-    @run_until_complete
-    def test_set_errors(self):
-        key, value = b'key:set', b'1'
-        yield from self.mcache.set(key, value, exptime=1)
+    yield from asyncio.sleep(1, loop=loop)
 
-        with self.assertRaises(ValidationException):
-            yield from self.mcache.set(key, value, exptime=-1)
+    test_value = yield from mcache.get(key)
+    assert test_value is None
 
-        with self.assertRaises(ValidationException):
-            yield from self.mcache.set(key, value, exptime=3.14)
 
-    @run_until_complete
-    def test_add(self):
-        key, value = b'key:add', b'1'
-        yield from self.mcache.set(key, value)
+@pytest.mark.run_loop
+def test_set_errors(mcache):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value, exptime=1)
 
-        test_value = yield from self.mcache.add(key, b'2')
-        self.assertEqual(test_value, False)
+    with pytest.raises(ValidationException):
+        yield from mcache.set(key, value, exptime=-1)
 
-        test_value = yield from self.mcache.add(b'not:' + key, b'2')
-        self.assertEqual(test_value, True)
+    with pytest.raises(ValidationException):
+        yield from mcache.set(key, value, exptime=3.14)
 
-        test_value = yield from self.mcache.get(b'not:' + key)
-        self.assertEqual(test_value, b'2')
 
-    @run_until_complete
-    def test_replace(self):
-        key, value = b'key:replace', b'1'
-        yield from self.mcache.set(key, value)
+@pytest.mark.run_loop
+def test_add(mcache):
+    key, value = b'key:add', b'1'
+    yield from mcache.set(key, value)
 
-        test_value = yield from self.mcache.replace(key, b'2')
-        self.assertEqual(test_value, True)
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, b'2')
+    test_value = yield from mcache.add(key, b'2')
+    assert not test_value
 
-        test_value = yield from self.mcache.replace(b'not:' + key, b'3')
-        self.assertEqual(test_value, False)
-        # make sure value exists
-        test_value = yield from self.mcache.get(b'not:' + key)
-        self.assertEqual(test_value, None)
+    test_value = yield from mcache.add(b'not:' + key, b'2')
+    assert test_value
 
-    @run_until_complete
-    def test_append(self):
-        key, value = b'key:append', b'1'
-        yield from self.mcache.set(key, value)
+    test_value = yield from mcache.get(b'not:' + key)
+    assert test_value == b'2'
 
-        test_value = yield from self.mcache.append(key, b'2')
-        self.assertEqual(test_value, True)
 
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, b'12')
+@pytest.mark.run_loop
+def test_replace(mcache):
+    key, value = b'key:replace', b'1'
+    yield from mcache.set(key, value)
 
-        test_value = yield from self.mcache.append(b'not:' + key, b'3')
-        self.assertEqual(test_value, False)
-        # make sure value exists
-        test_value = yield from self.mcache.get(b'not:' + key)
-        self.assertEqual(test_value, None)
+    test_value = yield from mcache.replace(key, b'2')
+    assert test_value
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == b'2'
 
-    @run_until_complete
-    def test_prepend(self):
-        key, value = b'key:prepend', b'1'
-        yield from self.mcache.set(key, value)
+    test_value = yield from mcache.replace(b'not:' + key, b'3')
+    assert not test_value
+    # make sure value exists
+    test_value = yield from mcache.get(b'not:' + key)
+    assert test_value is None
 
-        test_value = yield from self.mcache.prepend(key, b'2')
-        self.assertEqual(test_value, True)
 
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, b'21')
+@pytest.mark.run_loop
+def test_append(mcache):
+    key, value = b'key:append', b'1'
+    yield from mcache.set(key, value)
 
-        test_value = yield from self.mcache.prepend(b'not:' + key, b'3')
-        self.assertEqual(test_value, False)
-        # make sure value exists
-        test_value = yield from self.mcache.get(b'not:' + key)
-        self.assertEqual(test_value, None)
+    test_value = yield from mcache.append(key, b'2')
+    assert test_value
 
-    @run_until_complete
-    def test_delete(self):
-        key, value = b'key:delete', b'value'
-        yield from self.mcache.set(key, value)
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == b'12'
 
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
+    test_value = yield from mcache.append(b'not:' + key, b'3')
+    assert not test_value
+    # make sure value exists
+    test_value = yield from mcache.get(b'not:' + key)
+    assert test_value is None
 
-        is_deleted = yield from self.mcache.delete(key)
-        self.assertTrue(is_deleted)
-        # make sure value does not exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, None)
 
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
-            fut = asyncio.Future(loop=self.loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
+@pytest.mark.run_loop
+def test_prepend(mcache):
+    key, value = b'key:prepend', b'1'
+    yield from mcache.set(key, value)
 
-            yield from self.mcache.delete(key)
+    test_value = yield from mcache.prepend(key, b'2')
+    assert test_value
 
-    @run_until_complete
-    def test_delete_key_not_exists(self):
-        is_deleted = yield from self.mcache.delete(b'not:key')
-        self.assertFalse(is_deleted)
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == b'21'
 
-    @run_until_complete
-    def test_incr(self):
-        key, value = b'key:incr:1', b'1'
-        yield from self.mcache.set(key, value)
+    test_value = yield from mcache.prepend(b'not:' + key, b'3')
+    assert not test_value
+    # make sure value exists
+    test_value = yield from mcache.get(b'not:' + key)
+    assert test_value is None
 
-        test_value = yield from self.mcache.incr(key, 2)
-        self.assertEqual(test_value, 3)
 
-        # make sure value exists
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, b'3')
+@pytest.mark.run_loop
+def test_delete(mcache, loop):
+    key, value = b'key:delete', b'value'
+    yield from mcache.set(key, value)
 
-    @run_until_complete
-    def test_incr_errors(self):
-        key, value = b'key:incr:2', b'string'
-        yield from self.mcache.set(key, value)
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == value
 
-        with self.assertRaises(ClientException):
-            yield from self.mcache.incr(key, 2)
+    is_deleted = yield from mcache.delete(key)
+    assert is_deleted
+    # make sure value does not exists
+    test_value = yield from mcache.get(key)
+    assert test_value is None
 
-        with self.assertRaises(ClientException):
-            yield from self.mcache.incr(key, 3.14)
-
-    @run_until_complete
-    def test_decr(self):
-        key, value = b'key:decr:1', b'17'
-        yield from self.mcache.set(key, value)
-
-        test_value = yield from self.mcache.decr(key, 2)
-        self.assertEqual(test_value, 15)
-
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, b'15')
-
-        test_value = yield from self.mcache.decr(key, 1000)
-        self.assertEqual(test_value, 0)
-
-    @run_until_complete
-    def test_decr_errors(self):
-        key, value = b'key:decr:2', b'string'
-        yield from self.mcache.set(key, value)
-
-        with self.assertRaises(ClientException):
-            yield from self.mcache.decr(key, 2)
-
-        with self.assertRaises(ClientException):
-            yield from self.mcache.decr(key, 3.14)
-
-    @run_until_complete
-    def test_stats(self):
-        stats = yield from self.mcache.stats()
-        self.assertTrue(b'pid' in stats)
-
-    @run_until_complete
-    def test_touch(self):
-        key, value = b'key:touch:1', b'17'
-        yield from self.mcache.set(key, value)
-
-        test_value = yield from self.mcache.touch(key, 1)
-        self.assertEqual(test_value, True)
-
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, value)
-
-        yield from asyncio.sleep(1, loop=self.loop)
-
-        test_value = yield from self.mcache.get(key)
-        self.assertEqual(test_value, None)
-
-        test_value = yield from self.mcache.touch(b'not:' + key, 1)
-        self.assertEqual(test_value, False)
-
-        with patch.object(self.mcache, '_execute_simple_command') as patched, \
-                self.assertRaises(ClientException):
-            fut = asyncio.Future(loop=self.loop)
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        with pytest.raises(ClientException):
+            fut = asyncio.Future(loop=loop)
             fut.set_result(b'SERVER_ERROR error\r\n')
             patched.return_value = fut
 
-            yield from self.mcache.touch(b'not:' + key, 1)
+            yield from mcache.delete(key)
 
-    @run_until_complete
-    def test_close(self):
-        yield from self.mcache.close()
-        self.assertEqual(self.mcache._pool.size(), 0)
+
+@pytest.mark.run_loop
+def test_delete_key_not_exists(mcache):
+    is_deleted = yield from mcache.delete(b'not:key')
+    assert not is_deleted
+
+
+@pytest.mark.run_loop
+def test_incr(mcache):
+    key, value = b'key:incr:1', b'1'
+    yield from mcache.set(key, value)
+
+    test_value = yield from mcache.incr(key, 2)
+    assert test_value == 3
+
+    # make sure value exists
+    test_value = yield from mcache.get(key)
+    assert test_value == b'3'
+
+
+@pytest.mark.run_loop
+def test_incr_errors(mcache):
+    key, value = b'key:incr:2', b'string'
+    yield from mcache.set(key, value)
+
+    with pytest.raises(ClientException):
+        yield from mcache.incr(key, 2)
+
+    with pytest.raises(ClientException):
+        yield from mcache.incr(key, 3.14)
+
+
+@pytest.mark.run_loop
+def test_decr(mcache):
+    key, value = b'key:decr:1', b'17'
+    yield from mcache.set(key, value)
+
+    test_value = yield from mcache.decr(key, 2)
+    assert test_value == 15
+
+    test_value = yield from mcache.get(key)
+    assert test_value == b'15'
+
+    test_value = yield from mcache.decr(key, 1000)
+    assert test_value == 0
+
+
+@pytest.mark.run_loop
+def test_decr_errors(mcache):
+    key, value = b'key:decr:2', b'string'
+    yield from mcache.set(key, value)
+
+    with pytest.raises(ClientException):
+        yield from mcache.decr(key, 2)
+
+    with pytest.raises(ClientException):
+        yield from mcache.decr(key, 3.14)
+
+
+@pytest.mark.run_loop
+def test_stats(mcache):
+    stats = yield from mcache.stats()
+    assert b'pid' in stats
+
+
+@pytest.mark.run_loop
+def test_touch(mcache, loop):
+    key, value = b'key:touch:1', b'17'
+    yield from mcache.set(key, value)
+
+    test_value = yield from mcache.touch(key, 1)
+    assert test_value
+
+    test_value = yield from mcache.get(key)
+    assert test_value == value
+
+    yield from asyncio.sleep(1, loop=loop)
+
+    test_value = yield from mcache.get(key)
+    assert test_value is None
+
+    test_value = yield from mcache.touch(b'not:' + key, 1)
+    assert not test_value
+
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        with pytest.raises(ClientException):
+            fut = asyncio.Future(loop=loop)
+            fut.set_result(b'SERVER_ERROR error\r\n')
+            patched.return_value = fut
+
+            yield from mcache.touch(b'not:' + key, 1)
+
+
+@pytest.mark.run_loop
+def test_close(mcache):
+    yield from mcache.close()
+    assert mcache._pool.size() == 0
