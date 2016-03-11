@@ -1,4 +1,6 @@
 docker-py
+docutils
+pygments
 pytest
 pytest-cov
 pytest-sugar
