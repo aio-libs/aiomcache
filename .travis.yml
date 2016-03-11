@@ -1,17 +1,40 @@
+sudo: required
 language: python
-services: memcached
 python:
   - "3.3"
   - "3.4"
   - "3.5"
 
+services:
+  - docker
+
 install:
-  - python setup.py install
-  - pip install pyflakes
-  - pip install pep8
-  #- pip install coveralls
+  - pip install -Ur requirements.txt
+  - pip install -e .
+  - pip install coveralls
 
 script:
-  - pep8 aiomcache
-  - pyflakes .
-  - python runtests.py -v
+  - make cov
+
+
+cache:
+  directories:
+  - $HOME/.cache/pip
+
+before_cache:
+  - rm -f $HOME/.cache/pip/log/debug.log
+
+after_script:
+  - coveralls
+
+
+deploy:
+  provider: pypi
+  user: andrew.svetlov
+  password:
+    secure: eZr29byHDr1yo8KyYM+kRMxZ6jn8SFItiSy61SVuhn9/RfmlgHV5mn462kUTWnSPVOV0QMTJq5BpDpW8v4P1VyFCOno6+yvmrDJkObq7xTddLcYlgP8lIoY1wvp5Lq44lzagLMKAU37T1qXe344ufOCgLL3nRPmqspaUqHhAO9Q=
+  distributions: "sdist bdist_wheel"
+  on:
+    tags: true
+    all_branches: true
+    python: 3.5
