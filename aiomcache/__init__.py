@@ -13,3 +13,5 @@ from .client import Client
 from .exceptions import ClientException, ValidationException
 
 __all__ = ('Client', 'ClientException', 'ValidationException')
+
+__version__ = '0.3.0'
