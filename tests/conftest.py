@@ -226,16 +226,17 @@ def docker():
 @pytest.yield_fixture(scope='session')
 def mcache_server(unused_port, docker, session_id):
     docker.pull('memcached:latest')
-    port = unused_port()
     container = docker.create_container(
         image='memcached',
         name='memcached-test-server-{}'.format(session_id),
         ports=[11211],
         detach=True,
-        host_config=docker.create_host_config(port_bindings={11211: port})
     )
     docker.start(container=container['Id'])
-    mcache_params = dict(host='127.0.0.1',
+    inspection = docker.inspect_container(container['Id'])
+    host = inspection['NetworkSettings']['IPAddress']
+    port = 11211
+    mcache_params = dict(host=host,
                          port=port)
     delay = 0.001
     for i in range(100):
@@ -249,6 +250,7 @@ def mcache_server(unused_port, docker, session_id):
             delay *= 2
     else:
         pytest.fail("Cannot start memcached")
+    container['host'] = host
     container['port'] = port
     container['mcache_params'] = mcache_params
     yield container
