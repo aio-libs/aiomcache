@@ -85,8 +85,12 @@ class MemcachePool:
     def _create_new_conn(self):
         if self._size < self._maxsize:
             self._size += 1
-            reader, writer = yield from asyncio.open_connection(
-                self._host, self._port, loop=self._loop)
+            try:
+                reader, writer = yield from asyncio.open_connection(
+                    self._host, self._port, loop=self._loop)
+            except:
+                self._size -= 1
+                raise
             return _connection(reader, writer)
         else:
             return None
