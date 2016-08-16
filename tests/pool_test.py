@@ -108,7 +108,7 @@ def test_bad_connection(mcache_params, loop):
     pool = MemcachePool(minsize=5, maxsize=1, loop=loop, **mcache_params)
     pool._host = "INVALID_HOST"
     assert pool.size() == 0
-    with pytest.raises(BlockingIOError):
+    with pytest.raises(Exception):
         conn = yield from pool.acquire()
         assert isinstance(conn.reader, asyncio.StreamReader)
         assert isinstance(conn.writer, asyncio.StreamWriter)
