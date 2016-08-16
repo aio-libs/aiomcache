@@ -76,10 +76,8 @@ class MemcachePool:
         if conn.reader.at_eof() or conn.reader.exception():
             self._do_close(conn)
         else:
-            try:
-                self._pool.put_nowait(conn)
-            except asyncio.QueueFull:
-                self._do_close(conn)
+            # This should never fail because poolsize=maxsize
+            self._pool.put_nowait(conn)
 
     @asyncio.coroutine
     def _create_new_conn(self):

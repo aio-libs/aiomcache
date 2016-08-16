@@ -83,3 +83,34 @@ def test_acquire_limit_maxsize(mcache_params,
     yield from asyncio.gather(*([acquire_wait_release()] * 3), loop=loop)
     assert pool.size() == 1
     assert len(pool._in_use) == 0
+
+
+@pytest.mark.run_loop
+def test_maxsize_greater_than_minsize(mcache_params, loop):
+    pool = MemcachePool(minsize=5, maxsize=1, loop=loop, **mcache_params)
+    conn = yield from pool.acquire()
+    assert isinstance(conn.reader, asyncio.StreamReader)
+    assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+
+
+@pytest.mark.run_loop
+def test_0_minsize(mcache_params, loop):
+    pool = MemcachePool(minsize=0, maxsize=5, loop=loop, **mcache_params)
+    conn = yield from pool.acquire()
+    assert isinstance(conn.reader, asyncio.StreamReader)
+    assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+
+
+@pytest.mark.run_loop
+def test_bad_connection(mcache_params, loop):
+    pool = MemcachePool(minsize=5, maxsize=1, loop=loop, **mcache_params)
+    pool._host = "INVALID_HOST"
+    assert pool.size() == 0
+    with pytest.raises(BlockingIOError):
+        conn = yield from pool.acquire()
+        assert isinstance(conn.reader, asyncio.StreamReader)
+        assert isinstance(conn.writer, asyncio.StreamWriter)
+        pool.release(conn)
+    assert pool.size() == 0
