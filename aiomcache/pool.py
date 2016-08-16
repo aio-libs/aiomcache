@@ -61,7 +61,7 @@ class MemcachePool:
                 conn = yield from self._create_new_conn()
 
             # Give up control
-            yield from asyncio.sleep(0)
+            yield from asyncio.sleep(0, loop=self._loop)
 
         self._in_use.add(conn)
         return conn
