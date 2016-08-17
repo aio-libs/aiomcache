@@ -243,7 +243,7 @@ def mcache_server(unused_port, docker, session_id):
         try:
             conn = memcache.Client(
                 ['{host}:{port}'.format_map(mcache_params)])
-            conn.get("unexisting-key")
+            conn.get_stats()
             break
         except Exception:
             time.sleep(delay)
