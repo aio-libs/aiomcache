@@ -12,10 +12,10 @@ def test_version(mcache, loop):
     assert version == stats[b'version']
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        fut = asyncio.Future(loop=loop)
+        fut.set_result(b'SERVER_ERROR error\r\n')
+        patched.return_value = fut
         with pytest.raises(ClientException):
-            fut = asyncio.Future(loop=loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
             yield from mcache.version()
 
 
@@ -33,10 +33,10 @@ def test_flush_all(mcache, loop):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        fut = asyncio.Future(loop=loop)
+        fut.set_result(b'SERVER_ERROR error\r\n')
+        patched.return_value = fut
         with pytest.raises(ClientException):
-            fut = asyncio.Future(loop=loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
             yield from mcache.flush_all()
 
 
@@ -50,10 +50,10 @@ def test_set_get(mcache, loop):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        fut = asyncio.Future(loop=loop)
+        fut.set_result(b'SERVER_ERROR error\r\n')
+        patched.return_value = fut
         with pytest.raises(ClientException):
-            fut = asyncio.Future(loop=loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
             yield from mcache.set(key, value)
 
 
@@ -78,8 +78,7 @@ def test_multi_get_doubling_keys(mcache):
     yield from mcache.set(key, value)
 
     with pytest.raises(ClientException):
-        test_value = yield from mcache.multi_get(key, key)
-        assert test_value == []
+        yield from mcache.multi_get(key, key)
 
 
 @pytest.mark.run_loop
@@ -194,11 +193,11 @@ def test_delete(mcache, loop):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        with pytest.raises(ClientException):
-            fut = asyncio.Future(loop=loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
+        fut = asyncio.Future(loop=loop)
+        fut.set_result(b'SERVER_ERROR error\r\n')
+        patched.return_value = fut
 
+        with pytest.raises(ClientException):
             yield from mcache.delete(key)
 
 
@@ -286,11 +285,11 @@ def test_touch(mcache, loop):
     assert not test_value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        with pytest.raises(ClientException):
-            fut = asyncio.Future(loop=loop)
-            fut.set_result(b'SERVER_ERROR error\r\n')
-            patched.return_value = fut
+        fut = asyncio.Future(loop=loop)
+        fut.set_result(b'SERVER_ERROR error\r\n')
+        patched.return_value = fut
 
+        with pytest.raises(ClientException):
             yield from mcache.touch(b'not:' + key, 1)
 
 
