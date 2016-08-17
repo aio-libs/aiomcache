@@ -4,6 +4,7 @@ python:
   - "3.3"
   - "3.4"
   - "3.5"
+  - "nightly"
 
 services:
   - docker
@@ -11,7 +12,7 @@ services:
 install:
   - pip install -Ur requirements.txt
   - pip install -e .
-  - pip install coveralls
+  - pip install codecov
 
 script:
   - make cov
@@ -29,7 +30,7 @@ before_cache:
   - rm -f $HOME/.cache/pip/log/debug.log
 
 after_script:
-  - coveralls
+  - codecov
 
 
 deploy:
