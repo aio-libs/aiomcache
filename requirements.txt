@@ -3,6 +3,6 @@ docutils
 pygments
 pytest
 pytest-cov
-pytest-sugar
+pytest-sugar==0.7.1
 python-memcached
 flake8
