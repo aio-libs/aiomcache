@@ -4,5 +4,5 @@ pygments
 pytest
 pytest-cov
 pytest-sugar==0.7.1
-python-memcached
+python-memcached==1.58
 flake8
