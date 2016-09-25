@@ -1,4 +1,4 @@
-docker-py
+docker-py==1.10.3
 docutils==0.12
 pygments
 pytest
