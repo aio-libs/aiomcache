@@ -44,22 +44,6 @@ def test_pool_clear(mcache_params, loop):
 
 
 @pytest.mark.run_loop
-def test_pool_is_full(mcache_params, loop):
-    pool = MemcachePool(minsize=1, maxsize=2, loop=loop, **mcache_params)
-    conn = yield from pool.acquire()
-
-    # put garbage to the pool make it look like full
-    mocked_conns = [_connection(0, 0), _connection(1, 1)]
-    yield from pool._pool.put(mocked_conns[0])
-    yield from pool._pool.put(mocked_conns[1])
-
-    # try to return connection back
-    assert pool.size() == 3
-    pool.release(conn)
-    assert pool.size() == 2
-
-
-@pytest.mark.run_loop
 def test_acquire_dont_create_new_connection_if_have_conn_in_pool(mcache_params,
                                                                  loop):
     pool = MemcachePool(minsize=1, maxsize=5, loop=loop, **mcache_params)
@@ -73,3 +57,60 @@ def test_acquire_dont_create_new_connection_if_have_conn_in_pool(mcache_params,
     conn = yield from pool.acquire()
     assert conn is _conn
     assert pool.size() == 1
+
+
+@pytest.mark.run_loop
+def test_acquire_limit_maxsize(mcache_params,
+                               loop):
+    pool = MemcachePool(minsize=1, maxsize=1, loop=loop, **mcache_params)
+    assert pool.size() == 0
+
+    # Create up to max connections
+    _conn = yield from pool.acquire()
+    assert pool.size() == 1
+    pool.release(_conn)
+
+    @asyncio.coroutine
+    def acquire_wait_release():
+        conn = yield from pool.acquire()
+        assert conn is _conn
+        yield from asyncio.sleep(0.01, loop=loop)
+        assert len(pool._in_use) == 1
+        assert pool.size() == 1
+        assert pool._pool.qsize() == 0
+        pool.release(conn)
+
+    yield from asyncio.gather(*([acquire_wait_release()] * 3), loop=loop)
+    assert pool.size() == 1
+    assert len(pool._in_use) == 0
+
+
+@pytest.mark.run_loop
+def test_maxsize_greater_than_minsize(mcache_params, loop):
+    pool = MemcachePool(minsize=5, maxsize=1, loop=loop, **mcache_params)
+    conn = yield from pool.acquire()
+    assert isinstance(conn.reader, asyncio.StreamReader)
+    assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+
+
+@pytest.mark.run_loop
+def test_0_minsize(mcache_params, loop):
+    pool = MemcachePool(minsize=0, maxsize=5, loop=loop, **mcache_params)
+    conn = yield from pool.acquire()
+    assert isinstance(conn.reader, asyncio.StreamReader)
+    assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+
+
+@pytest.mark.run_loop
+def test_bad_connection(mcache_params, loop):
+    pool = MemcachePool(minsize=5, maxsize=1, loop=loop, **mcache_params)
+    pool._host = "INVALID_HOST"
+    assert pool.size() == 0
+    with pytest.raises(Exception):
+        conn = yield from pool.acquire()
+        assert isinstance(conn.reader, asyncio.StreamReader)
+        assert isinstance(conn.writer, asyncio.StreamWriter)
+        pool.release(conn)
+    assert pool.size() == 0

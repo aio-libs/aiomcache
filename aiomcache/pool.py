@@ -14,9 +14,11 @@ class MemcachePool:
         self._host = host
         self._port = port
         self._minsize = minsize
+        self._maxsize = maxsize
         self._loop = loop
         self._pool = asyncio.Queue(maxsize, loop=loop)
         self._in_use = set()
+        self._size = 0
 
     @asyncio.coroutine
     def clear(self):
@@ -26,6 +28,7 @@ class MemcachePool:
             self._do_close(conn)
 
     def _do_close(self, conn):
+        self._size -= 1
         conn.reader.feed_eof()
         conn.writer.close()
 
@@ -36,8 +39,12 @@ class MemcachePool:
 
         :return: ``tuple`` (reader, writer)
         """
-        while self.size() < self._minsize:
+        while self._size < self._minsize:
             _conn = yield from self._create_new_conn()
+
+            # Could not create new connection
+            if _conn is None:
+                break
             yield from self._pool.put(_conn)
 
         conn = None
@@ -53,6 +60,9 @@ class MemcachePool:
             if conn is None:
                 conn = yield from self._create_new_conn()
 
+            # Give up control
+            yield from asyncio.sleep(0, loop=self._loop)
+
         self._in_use.add(conn)
         return conn
 
@@ -66,16 +76,22 @@ class MemcachePool:
         if conn.reader.at_eof() or conn.reader.exception():
             self._do_close(conn)
         else:
-            try:
-                self._pool.put_nowait(conn)
-            except asyncio.QueueFull:
-                self._do_close(conn)
+            # This should never fail because poolsize=maxsize
+            self._pool.put_nowait(conn)
 
     @asyncio.coroutine
     def _create_new_conn(self):
-        reader, writer = yield from asyncio.open_connection(
-            self._host, self._port, loop=self._loop)
-        return _connection(reader, writer)
+        if self._size < self._maxsize:
+            self._size += 1
+            try:
+                reader, writer = yield from asyncio.open_connection(
+                    self._host, self._port, loop=self._loop)
+            except:
+                self._size -= 1
+                raise
+            return _connection(reader, writer)
+        else:
+            return None
 
     def size(self):
-        return len(self._in_use) + self._pool.qsize()
+        return self._size

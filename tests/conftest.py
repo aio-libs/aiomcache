@@ -239,7 +239,7 @@ def mcache_server(unused_port, docker, session_id):
     mcache_params = dict(host=host,
                          port=port)
     delay = 0.001
-    for i in range(100):
+    for i in range(10):
         try:
             conn = memcache.Client(
                 ['{host}:{port}'.format_map(mcache_params)])
@@ -253,6 +253,7 @@ def mcache_server(unused_port, docker, session_id):
     container['host'] = host
     container['port'] = port
     container['mcache_params'] = mcache_params
+    time.sleep(0.1)
     yield container
 
     docker.kill(container=container['Id'])
