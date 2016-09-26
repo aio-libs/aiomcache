@@ -1,7 +1,12 @@
 CHANGES
 =======
 
-0.3.0 (03-11-2016)
+0.4.0 (2016-09-26)
+------------------
+
+- Make max_size strict #14
+
+0.3.0 (2016-03-11)
 ------------------
 
 - Dockerize tests
@@ -10,12 +15,12 @@ CHANGES
 
 - Fix stats parse to compatible more mc class software #5
 
-0.2 (12-15-2015)
+0.2 (2015-12-15)
 ----------------
 
 - Make the library Python 3.5 compatible
 
-0.1 (06-18-2014)
+0.1 (2014-06-18)
 ----------------
 
 - Initial release
