@@ -48,6 +48,8 @@ def test_set_get(mcache, loop):
     assert test_value == value
     test_value = yield from mcache.get(b'not:' + key)
     assert test_value is None
+    test_value = yield from mcache.get(b'not:' + key, default=value)
+    assert test_value is value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
         fut = asyncio.Future(loop=loop)
