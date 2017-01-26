@@ -68,11 +68,11 @@ def test_gets(mcache, loop):
     assert test_value == value
     assert isinstance(cas, int)
 
-    test_value = yield from mcache.get(b'not:' + key)
+    test_value, cas = yield from mcache.gets(b'not:' + key)
     assert test_value is None
     assert cas is None
 
-    test_value = yield from mcache.get(b'not:' + key, default=value)
+    test_value, cas = yield from mcache.gets(b'not:' + key, default=value)
     assert test_value == value
     assert cas is None
 
