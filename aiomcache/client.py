@@ -77,7 +77,7 @@ class Client(object):
     @asyncio.coroutine
     def _multi_get(self, conn, *keys):
         # req  - get <key> [<key> ...]\r\n
-        # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+        # resp - VALUE <key> <flags> <bytes>\r\n
         #        <data block>\r\n (if exists)
         #        [...]
         #        END\r\n
@@ -118,6 +118,51 @@ class Client(object):
             raise ClientException('received too many responses')
         return [received.get(k, None) for k in keys]
 
+    @asyncio.coroutine
+    def _multi_gets(self, conn, *keys):
+        # req  - get <key> [<key> ...]\r\n
+        # resp - VALUE <key> <flags> <bytes> <cas unique>\r\n
+        #        <data block>\r\n (if exists)
+        #        [...]
+        #        END\r\n
+        if not keys:
+            return []
+
+        [self._validate_key(key) for key in keys]
+        if len(set(keys)) != len(keys):
+            raise ClientException('duplicate keys passed to multi_get')
+
+        conn.writer.write(b'gets ' + b' '.join(keys) + b'\r\n')
+
+        received = {}
+        line = yield from conn.reader.readline()
+
+        while line != b'END\r\n':
+            terms = line.split()
+
+            if len(terms) == 5 and terms[0] == b'VALUE':  # exists
+                key = terms[1]
+                flags = int(terms[2])
+                length = int(terms[3])
+                cas = int(terms[4])
+
+                if flags != 0:
+                    raise ClientException('received non zero flags')
+
+                val = (yield from conn.reader.readexactly(length+2))[:-2]
+                if key in received:
+                    raise ClientException('duplicate results from server')
+
+                received[key] = val, cas
+            else:
+                raise ClientException('get failed', line)
+
+            line = yield from conn.reader.readline()
+
+        if len(received) > len(keys):
+            raise ClientException('received too many responses')
+        return [received.get(k, [None, None]) for k in keys]
+
     @acquire
     def delete(self, conn, key):
         """Deletes a key/value pair from the server.
@@ -145,6 +190,17 @@ class Client(object):
         """
         result = yield from self._multi_get(conn, key)
         return (result[0] or default) if result else default
+
+    @acquire
+    def gets(self, conn, key, default=None):
+        """Gets a single value from the server.
+
+        :param key: ``bytes``, is the key for the item being fetched
+        :param default: default value if there is no value.
+        :return: ``bytes``, is the data for this specified key.
+        """
+        result = yield from self._multi_get(conn, key)
+        return (result[0] or (default, None)) if result else (default, None)
 
     @acquire
     def multi_get(self, conn, *keys):
