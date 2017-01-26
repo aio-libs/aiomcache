@@ -271,7 +271,8 @@ class Client(object):
         cmd = _cmd + b'\r\n' + value + b'\r\n'
         resp = yield from self._execute_simple_command(conn, cmd)
 
-        if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
+        if resp not in (
+                const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
             raise ClientException('stats {} failed'.format(command), resp)
         return resp == const.STORED
 
@@ -301,7 +302,8 @@ class Client(object):
         :param value: ``bytes``, data to store.
         :param exptime: ``int``, is expiration time. If it's 0, the
         item never expires.
-        :param cas_token: ``int``, unique cas token retrieve from previous ``gets``
+        :param cas_token: ``int``, unique cas token retrieve from previous
+            ``gets``
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
