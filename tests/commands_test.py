@@ -49,7 +49,7 @@ def test_set_get(mcache, loop):
     test_value = yield from mcache.get(b'not:' + key)
     assert test_value is None
     test_value = yield from mcache.get(b'not:' + key, default=value)
-    assert test_value is value
+    assert test_value == value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
         fut = asyncio.Future(loop=loop)
@@ -57,6 +57,24 @@ def test_set_get(mcache, loop):
         patched.return_value = fut
         with pytest.raises(ClientException):
             yield from mcache.set(key, value)
+
+
+@pytest.mark.run_loop
+def test_gets(mcache, loop):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value)
+
+    test_value, cas = yield from mcache.gets(key)
+    assert test_value == value
+    assert isinstance(cas, int)
+
+    test_value, cas = yield from mcache.gets(b'not:' + key)
+    assert test_value is None
+    assert cas is None
+
+    test_value, cas = yield from mcache.gets(b'not:' + key, default=value)
+    assert test_value == value
+    assert cas is None
 
 
 @pytest.mark.run_loop
@@ -106,6 +124,27 @@ def test_set_errors(mcache):
 
     with pytest.raises(ValidationException):
         yield from mcache.set(key, value, exptime=3.14)
+
+
+@pytest.mark.run_loop
+def test_gets_cas(mcache, loop):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value)
+
+    test_value, cas = yield from mcache.gets(key)
+
+    stored = yield from mcache.cas(key, value, cas)
+    assert stored is True
+
+    stored = yield from mcache.cas(key, value, cas)
+    assert stored is False
+
+
+@pytest.mark.run_loop
+def test_cas_missing(mcache, loop):
+    key, value = b'key:set', b'1'
+    stored = yield from mcache.cas(key, value, 123)
+    assert stored is False
 
 
 @pytest.mark.run_loop

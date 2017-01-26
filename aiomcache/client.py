@@ -77,7 +77,7 @@ class Client(object):
     @asyncio.coroutine
     def _multi_get(self, conn, *keys):
         # req  - get <key> [<key> ...]\r\n
-        # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+        # resp - VALUE <key> <flags> <bytes>\r\n
         #        <data block>\r\n (if exists)
         #        [...]
         #        END\r\n
@@ -118,6 +118,51 @@ class Client(object):
             raise ClientException('received too many responses')
         return [received.get(k, None) for k in keys]
 
+    @asyncio.coroutine
+    def _multi_gets(self, conn, *keys):
+        # req  - get <key> [<key> ...]\r\n
+        # resp - VALUE <key> <flags> <bytes> <cas unique>\r\n
+        #        <data block>\r\n (if exists)
+        #        [...]
+        #        END\r\n
+        if not keys:
+            return []
+
+        [self._validate_key(key) for key in keys]
+        if len(set(keys)) != len(keys):
+            raise ClientException('duplicate keys passed to multi_get')
+
+        conn.writer.write(b'gets ' + b' '.join(keys) + b'\r\n')
+
+        received = {}
+        line = yield from conn.reader.readline()
+
+        while line != b'END\r\n':
+            terms = line.split()
+
+            if len(terms) == 5 and terms[0] == b'VALUE':  # exists
+                key = terms[1]
+                flags = int(terms[2])
+                length = int(terms[3])
+                cas = int(terms[4])
+
+                if flags != 0:
+                    raise ClientException('received non zero flags')
+
+                val = (yield from conn.reader.readexactly(length+2))[:-2]
+                if key in received:
+                    raise ClientException('duplicate results from server')
+
+                received[key] = val, cas
+            else:
+                raise ClientException('get failed', line)
+
+            line = yield from conn.reader.readline()
+
+        if len(received) > len(keys):
+            raise ClientException('received too many responses')
+        return [received.get(k, [None, None]) for k in keys]
+
     @acquire
     def delete(self, conn, key):
         """Deletes a key/value pair from the server.
@@ -145,6 +190,19 @@ class Client(object):
         """
         result = yield from self._multi_get(conn, key)
         return (result[0] or default) if result else default
+
+    @acquire
+    def gets(self, conn, key, default=None):
+        """Gets a single value from the server.
+
+        :param key: ``bytes``, is the key for the item being fetched
+        :param default: default value if there is no value.
+        :return: ``bytes``, is the data for this specified key.
+        """
+        result = yield from self._multi_gets(conn, key)
+        if result and result[0][0] is not None:
+            return result[0]
+        return default, None
 
     @acquire
     def multi_get(self, conn, *keys):
@@ -189,8 +247,11 @@ class Client(object):
 
     @asyncio.coroutine
     def _storage_command(self, conn, command, key, value,
-                         flags=0, exptime=0):
+                         flags=0, exptime=0, cas=None):
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
+        #        <data block>\r\n
+        # resp - STORED\r\n (or others)
+        # req  - set <key> <flags> <exptime> <bytes> <cas> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
 
@@ -206,11 +267,14 @@ class Client(object):
             raise ValidationException('exptime negative', exptime)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
-        _cmd = b' '.join([command, key] + args) + b'\r\n'
-        cmd = _cmd + value + b'\r\n'
+        _cmd = b' '.join([command, key] + args)
+        if cas:
+            _cmd += b' ' + str(cas).encode('utf-8')
+        cmd = _cmd + b'\r\n' + value + b'\r\n'
         resp = yield from self._execute_simple_command(conn, cmd)
 
-        if resp not in (const.STORED, const.NOT_STORED):
+        if resp not in (
+                const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
             raise ClientException('stats {} failed'.format(command), resp)
         return resp == const.STORED
 
@@ -228,6 +292,25 @@ class Client(object):
         flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'set', key, value, flags, exptime)
+        return resp
+
+    @acquire
+    def cas(self, conn, key, value, cas_token, exptime=0):
+        """Sets a key to a value on the server
+        with an optional exptime (0 means don't auto-expire)
+        only if value hasn't change from first retrieval
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int``, is expiration time. If it's 0, the
+        item never expires.
+        :param cas_token: ``int``, unique cas token retrieve from previous
+            ``gets``
+        :return: ``bool``, True in case of success.
+        """
+        flags = 0  # TODO: fix when exception removed
+        resp = yield from self._storage_command(
+            conn, b'cas', key, value, flags, exptime, cas=cas_token)
         return resp
 
     @acquire
