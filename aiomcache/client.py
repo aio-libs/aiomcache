@@ -144,7 +144,7 @@ class Client(object):
         :return: ``bytes``, is the data for this specified key.
         """
         result = yield from self._multi_get(conn, key)
-        return result[0] if result else default
+        return (result[0] or default) if result else default
 
     @acquire
     def multi_get(self, conn, *keys):
