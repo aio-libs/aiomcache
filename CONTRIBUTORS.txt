@@ -2,4 +2,5 @@ Contributors
 ------------
 
 Maarten Draijer
+Manuel Miranda
 Nikolay Novik
