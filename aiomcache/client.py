@@ -199,7 +199,7 @@ class Client(object):
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
         """
-        result = yield from self._multi_get(conn, key)
+        result = yield from self._multi_gets(conn, key)
         return (result[0] or (default, None)) if result else (default, None)
 
     @acquire
@@ -245,8 +245,11 @@ class Client(object):
 
     @asyncio.coroutine
     def _storage_command(self, conn, command, key, value,
-                         flags=0, exptime=0):
+                         flags=0, exptime=0, cas=None):
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
+        #        <data block>\r\n
+        # resp - STORED\r\n (or others)
+        # req  - set <key> <flags> <exptime> <bytes> <cas> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
 
@@ -262,11 +265,13 @@ class Client(object):
             raise ValidationException('exptime negative', exptime)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
-        _cmd = b' '.join([command, key] + args) + b'\r\n'
-        cmd = _cmd + value + b'\r\n'
+        _cmd = b' '.join([command, key] + args)
+        if cas:
+            _cmd += b' ' + str(cas).encode('utf-8')
+        cmd = _cmd + b'\r\n' + value + b'\r\n'
         resp = yield from self._execute_simple_command(conn, cmd)
 
-        if resp not in (const.STORED, const.NOT_STORED):
+        if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
             raise ClientException('stats {} failed'.format(command), resp)
         return resp == const.STORED
 
@@ -284,6 +289,24 @@ class Client(object):
         flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'set', key, value, flags, exptime)
+        return resp
+
+    @acquire
+    def cas(self, conn, key, value, cas_token, exptime=0):
+        """Sets a key to a value on the server
+        with an optional exptime (0 means don't auto-expire)
+        only if value hasn't change from first retrieval
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int``, is expiration time. If it's 0, the
+        item never expires.
+        :param cas_token: ``int``, unique cas token retrieve from previous ``gets``
+        :return: ``bool``, True in case of success.
+        """
+        flags = 0  # TODO: fix when exception removed
+        resp = yield from self._storage_command(
+            conn, b'cas', key, value, flags, exptime, cas=cas_token)
         return resp
 
     @acquire

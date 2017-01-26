@@ -127,6 +127,27 @@ def test_set_errors(mcache):
 
 
 @pytest.mark.run_loop
+def test_gets_cas(mcache, loop):
+    key, value = b'key:set', b'1'
+    yield from mcache.set(key, value)
+
+    test_value, cas = yield from mcache.gets(key)
+
+    stored = yield from mcache.cas(key, value, cas)
+    assert stored is True
+
+    stored = yield from mcache.cas(key, value, cas)
+    assert stored is False
+
+
+@pytest.mark.run_loop
+def test_cas_missing(mcache, loop):
+    key, value = b'key:set', b'1'
+    stored = yield from mcache.cas(key, value, 123)
+    assert stored is False
+
+
+@pytest.mark.run_loop
 def test_add(mcache):
     key, value = b'key:add', b'1'
     yield from mcache.set(key, value)
