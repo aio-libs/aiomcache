@@ -171,7 +171,7 @@ class Client(object):
         and socket errors
         """
         values, _ = yield from self._multi_get(conn, *keys)
-        return [values.get(key) for key in keys]
+        return (values.get(key) for key in keys)
 
     @acquire
     def stats(self, conn, args=None):
