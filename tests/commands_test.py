@@ -84,12 +84,12 @@ def test_multi_get(mcache):
     yield from mcache.set(key1, value1)
     yield from mcache.set(key2, value2)
     test_value = yield from mcache.multi_get(key1, key2)
-    assert test_value == [value1, value2]
+    assert test_value == (value1, value2)
 
     test_value = yield from mcache.multi_get(b'not' + key1, key2)
-    assert test_value == [None, value2]
+    assert test_value == (None, value2)
     test_value = yield from mcache.multi_get()
-    assert test_value == []
+    assert test_value == ()
 
 
 @pytest.mark.run_loop
