@@ -245,9 +245,9 @@ def mcache_server_actual(host, port='11211'):
 
 
 def mcache_server_docker(unused_port, docker, session_id):
-    docker.pull('memcached:latest')
+    docker.pull('memcached:alpine')
     container = docker.create_container(
-        image='memcached',
+        image='memcached:alpine',
         name='memcached-test-server-{}'.format(session_id),
         ports=[11211],
         detach=True,
