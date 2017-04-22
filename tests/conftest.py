@@ -16,6 +16,14 @@ import memcache
 import aiomcache
 
 
+mcache_server_option = None
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        '--memcached', help='Memcached server')
+
+
 class _AssertWarnsContext:
     """A context manager used to implement TestCase.assertWarns* methods."""
 
@@ -201,9 +209,13 @@ def pytest_pyfunc_call(pyfuncitem):
 
 
 def pytest_runtest_setup(item):
+    global mcache_server_option
+
     if 'run_loop' in item.keywords and 'loop' not in item.fixturenames:
         # inject an event loop fixture for all async tests
         item.fixturenames.append('loop')
+
+    mcache_server_option = item.config.getoption('--memcached')
 
 
 def pytest_ignore_collect(path, config):
@@ -223,8 +235,17 @@ def docker():
     return DockerClient(version='auto')
 
 
-@pytest.yield_fixture(scope='session')
-def mcache_server(unused_port, docker, session_id):
+def mcache_server_actual(host, port='11211'):
+    port = int(port)
+    container = {
+        'host': host,
+        'port': port,
+    }
+    container['mcache_params'] = container.copy()
+    return container
+
+
+def mcache_server_docker(unused_port, docker, session_id):
     docker.pull('memcached:latest')
     container = docker.create_container(
         image='memcached',
@@ -232,32 +253,41 @@ def mcache_server(unused_port, docker, session_id):
         ports=[11211],
         detach=True,
     )
-    docker.start(container=container['Id'])
-    inspection = docker.inspect_container(container['Id'])
-    host = inspection['NetworkSettings']['IPAddress']
-    port = 11211
-    mcache_params = dict(host=host,
-                         port=port)
-    delay = 0.001
-    for i in range(10):
-        try:
-            conn = memcache.Client(
-                ['{host}:{port}'.format_map(mcache_params)])
-            conn.get_stats()
-            break
-        except Exception:
-            time.sleep(delay)
-            delay *= 2
-    else:
-        pytest.fail("Cannot start memcached")
-    container['host'] = host
-    container['port'] = port
-    container['mcache_params'] = mcache_params
-    time.sleep(0.1)
-    yield container
+    try:
+        docker.start(container=container['Id'])
+        inspection = docker.inspect_container(container['Id'])
+        host = inspection['NetworkSettings']['IPAddress']
+        port = 11211
+        mcache_params = dict(host=host, port=port)
+        delay = 0.001
+        for i in range(10):
+            try:
+                conn = memcache.Client(
+                    ['{host}:{port}'.format_map(mcache_params)])
+                conn.get_stats()
+                break
+            except Exception:
+                time.sleep(delay)
+                delay *= 2
+        else:
+            pytest.fail("Cannot start memcached")
+        container['host'] = host
+        container['port'] = port
+        container['mcache_params'] = mcache_params
+        time.sleep(0.1)
+        yield container
+    finally:
+        docker.kill(container=container['Id'])
+        docker.remove_container(container['Id'])
 
-    docker.kill(container=container['Id'])
-    docker.remove_container(container['Id'])
+
+@pytest.fixture(scope='session')
+def mcache_server(unused_port, docker, session_id):
+    if not mcache_server_option:
+        yield from mcache_server_docker(unused_port, docker, session_id)
+    else:
+        mcache_params = mcache_server_option.split(':')
+        yield mcache_server_actual(*mcache_params)
 
 
 @pytest.fixture
