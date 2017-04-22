@@ -9,8 +9,7 @@ import sys
 import time
 import uuid
 import warnings
-
-from docker import Client as DockerClient
+import docker as docker_mod
 
 import memcache
 import aiomcache
@@ -232,7 +231,7 @@ def session_id():
 
 @pytest.fixture(scope='session')
 def docker():
-    return DockerClient(version='auto')
+    return docker_mod.from_env()
 
 
 def mcache_server_actual(host, port='11211'):
