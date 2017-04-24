@@ -17,8 +17,8 @@ class MemcachePool:
         self._maxsize = maxsize
         self._loop = loop
         self._pool = asyncio.Queue(maxsize, loop=loop)
-        self._in_use = set()
         self._size = 0
+        self.lock = asyncio.Lock()
 
     @asyncio.coroutine
     def clear(self):
@@ -60,7 +60,6 @@ class MemcachePool:
             # Give up control
             yield from asyncio.sleep(0, loop=self._loop)
 
-        self._in_use.add(conn)
         return conn
 
     def release(self, conn):
@@ -68,8 +67,6 @@ class MemcachePool:
 
         :param conn: ``namedtuple`` (reader, writer)
         """
-        self._in_use.remove(conn)
-
         if conn.reader.at_eof() or conn.reader.exception():
             self._do_close(conn)
         else:
@@ -78,17 +75,18 @@ class MemcachePool:
 
     @asyncio.coroutine
     def _create_new_conn(self):
-        if self._size < self._maxsize:
-            self._size += 1
-            try:
-                reader, writer = yield from asyncio.open_connection(
-                    self._host, self._port, loop=self._loop)
-            except:
-                self._size -= 1
-                raise
-            return _connection(reader, writer)
-        else:
-            return None
+        with (yield from self.lock):
+            if self._size < self._maxsize:
+                try:
+                    reader, writer = yield from asyncio.open_connection(
+                        self._host, self._port, loop=self._loop)
+                    self._size += 1
+                except:
+                    self._size -= 1
+                    raise
+                return _connection(reader, writer)
+            else:
+                return None
 
     def size(self):
         return self._size
