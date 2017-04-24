@@ -51,11 +51,8 @@ class MemcachePool:
         while not conn:
             if not self._pool.empty():
                 _conn = yield from self._pool.get()
-                if _conn.reader.at_eof() or _conn.reader.exception():
-                    self._do_close(_conn)
-                    conn = None
-                else:
-                    conn = _conn
+                self._do_close(_conn)
+                conn = None
 
             if conn is None:
                 conn = yield from self._create_new_conn()
