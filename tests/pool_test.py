@@ -1,6 +1,8 @@
 import asyncio
 import pytest
+import random
 from aiomcache.pool import MemcachePool, _connection
+from aiomcache.client import acquire
 
 
 def test_pool_creation(mcache_params, loop):
@@ -80,9 +82,41 @@ def test_acquire_limit_maxsize(mcache_params,
         assert len(pool._pool) == 0
         pool.release(conn)
 
-    yield from asyncio.gather(*([acquire_wait_release()] * 3), loop=loop)
+    yield from asyncio.gather(*([acquire_wait_release()] * 50), loop=loop)
     assert pool.size() == 1
     assert len(pool._in_use) == 0
+    assert pool._pool.qsize() == 1
+
+
+@pytest.mark.run_loop
+def test_acquire_task_cancellation(
+        mcache_params, loop):
+
+    class Client:
+        def __init__(self):
+            self._pool = MemcachePool(
+                minsize=1, maxsize=1, loop=loop, **mcache_params)
+
+        @acquire
+        @asyncio.coroutine
+        def acquire_wait_release(self, conn):
+            assert self._pool.size() == 1
+            assert len(self._pool._in_use) == 1
+            yield from asyncio.sleep(random.uniform(0.01, 0.02), loop=loop)
+
+    client = Client()
+    _conn = yield from client._pool.acquire()
+    assert client._pool.size() == 1
+    client._pool.release(_conn)
+    tasks = [
+        asyncio.wait_for(
+            client.acquire_wait_release(),
+            random.uniform(1, 2), loop=loop) for x in range(3550)
+    ]
+    results = yield from asyncio.gather(*tasks, loop=loop, return_exceptions=True)
+    import ipdb; ipdb.set_trace()
+    assert len(client._pool._in_use) == 0
+    yield from client.acquire_wait_release()
 
 
 @pytest.mark.run_loop

@@ -17,7 +17,7 @@ class MemcachePool:
         self._maxsize = maxsize
         self._loop = loop
         self._in_use = set()
-        self._pool = deque(maxlen=maxsize)
+        self._pool = deque()
 
     @asyncio.coroutine
     def clear(self):
@@ -43,7 +43,8 @@ class MemcachePool:
             # Could not create new connection
             if _conn is None:
                 break
-            self._pool.append(_conn)
+            if self.size() < self._minsize:
+                self._pool.append(_conn)
 
         conn = None
         while not conn:
@@ -57,9 +58,8 @@ class MemcachePool:
 
             if conn is None:
                 conn = yield from self._create_new_conn()
-
-            # Give up control
-            yield from asyncio.sleep(0, loop=self._loop)
+                if conn is None:
+                    yield from asyncio.sleep(0, loop=self._loop)
 
         self._in_use.add(conn)
         return conn
