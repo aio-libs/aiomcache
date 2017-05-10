@@ -1,6 +1,8 @@
+import random
 import asyncio
 import pytest
 from aiomcache.pool import MemcachePool, _connection
+from aiomcache.client import acquire
 
 
 def test_pool_creation(mcache_params, loop):
@@ -80,9 +82,41 @@ def test_acquire_limit_maxsize(mcache_params,
         assert pool._pool.qsize() == 0
         pool.release(conn)
 
-    yield from asyncio.gather(*([acquire_wait_release()] * 3), loop=loop)
+    yield from asyncio.gather(*([acquire_wait_release()] * 50), loop=loop)
     assert pool.size() == 1
     assert len(pool._in_use) == 0
+    assert pool._pool.qsize() == 1
+
+
+@pytest.mark.run_loop
+def test_acquire_task_cancellation(
+        mcache_params, loop):
+
+    class Client:
+        def __init__(self, pool_size=4):
+            self._pool = MemcachePool(
+                minsize=pool_size, maxsize=pool_size,
+                loop=loop, **mcache_params)
+
+        @acquire
+        @asyncio.coroutine
+        def acquire_wait_release(self, conn):
+            assert self._pool.size() <= pool_size
+            yield from asyncio.sleep(random.uniform(0.01, 0.02), loop=loop)
+            return "foo"
+
+    pool_size = 4
+    client = Client(pool_size=pool_size)
+    tasks = [
+        asyncio.wait_for(
+            client.acquire_wait_release(),
+            random.uniform(1, 2), loop=loop) for x in range(1000)
+    ]
+    results = yield from asyncio.gather(
+        *tasks, loop=loop, return_exceptions=True)
+    assert client._pool.size() <= pool_size
+    assert len(client._pool._in_use) == 0
+    assert "foo" in results
 
 
 @pytest.mark.run_loop
