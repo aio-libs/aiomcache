@@ -39,12 +39,9 @@ class MemcachePool:
         """
         while self.size() < self._minsize:
             _conn = yield from self._create_new_conn()
-
-            # Could not create new connection
             if _conn is None:
                 break
-            if self.size() < self._minsize:
-                self._pool.append(_conn)
+            self._pool.append(_conn)
 
         conn = None
         while not conn:
@@ -84,7 +81,12 @@ class MemcachePool:
                     self._host, self._port, loop=self._loop)
             except:
                 raise
-            return _connection(reader, writer)
+            if self.size() < self._maxsize:
+                return _connection(reader, writer)
+            else:
+                reader.feed_eof()
+                writer.close()
+                return None
         else:
             return None
 

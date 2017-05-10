@@ -85,7 +85,7 @@ def test_acquire_limit_maxsize(mcache_params,
     yield from asyncio.gather(*([acquire_wait_release()] * 50), loop=loop)
     assert pool.size() == 1
     assert len(pool._in_use) == 0
-    assert pool._pool.qsize() == 1
+    assert len(pool._pool) == 1
 
 
 @pytest.mark.run_loop
@@ -103,6 +103,7 @@ def test_acquire_task_cancellation(
             assert self._pool.size() == 1
             assert len(self._pool._in_use) == 1
             yield from asyncio.sleep(random.uniform(0.01, 0.02), loop=loop)
+            assert self._pool.size() == 1
 
     client = Client()
     _conn = yield from client._pool.acquire()
@@ -111,12 +112,10 @@ def test_acquire_task_cancellation(
     tasks = [
         asyncio.wait_for(
             client.acquire_wait_release(),
-            random.uniform(1, 2), loop=loop) for x in range(3550)
+            random.uniform(1, 2), loop=loop) for x in range(400)
     ]
-    results = yield from asyncio.gather(*tasks, loop=loop, return_exceptions=True)
-    import ipdb; ipdb.set_trace()
+    yield from asyncio.gather(*tasks, loop=loop, return_exceptions=True)
     assert len(client._pool._in_use) == 0
-    yield from client.acquire_wait_release()
 
 
 @pytest.mark.run_loop
