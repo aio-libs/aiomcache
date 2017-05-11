@@ -37,7 +37,7 @@ class MemcachePool:
 
         :return: ``tuple`` (reader, writer)
         """
-        while self.size() < self._minsize:
+        while self.size() == 0 or self.size() < self._minsize:
             _conn = yield from self._create_new_conn()
             if _conn is None:
                 break
