@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+0.5.2 (2017-05-27)
+------------------
+
+- Fix issue with pool concurrency and task cancellation
+
 0.5.1 (2017-03-08)
 ------------------
 
