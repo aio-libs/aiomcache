@@ -15,7 +15,8 @@ class AllCommandsFail(object):
     def __enter__(self):
         self.patched = self.patch.__enter__()
         self.future = asyncio.Future(loop=self.loop)
-        self.failure_result = (None, None, 'version', None, StatusCode.INVALID_ARGUMENTS, None, None)
+        self.failure_result = (None, None, 'version', None,
+                               StatusCode.INVALID_ARGUMENTS, None)
         self.future.set_result(self.failure_result)
         self.patched.return_value = self.future
 
@@ -81,7 +82,8 @@ def test_gets(mcache_binary, loop):
     assert test_value is None
     assert cas is None
 
-    test_value, cas = yield from mcache_binary.gets(b'not:' + key, default=value)
+    test_value, cas = yield from mcache_binary.gets(
+        b'not:' + key, default=value)
     assert test_value == value
     assert cas is None
 

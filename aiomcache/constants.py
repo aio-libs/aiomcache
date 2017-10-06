@@ -9,6 +9,7 @@ VERSION = b'VERSION'
 EXISTS = b'EXISTS'
 OK = b'OK'
 
+
 class StatusCode(enum.IntEnum):
     NO_ERROR = 0x0000
     KEY_NOT_FOUND = 0x0001
@@ -19,6 +20,7 @@ class StatusCode(enum.IntEnum):
     INVALID_INCR = 0x0006
     UNKNOWN_COMMAND = 0x0081
     OUT_OF_MEMORY = 0x0082
+
 
 class Opcode(enum.IntEnum):
     GET = 0x00

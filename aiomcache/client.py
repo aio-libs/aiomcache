@@ -1,5 +1,4 @@
 import asyncio
-import enum
 import functools
 import re
 import struct
@@ -91,7 +90,8 @@ class ClientBase(object):
             conn, key, with_cas=True, with_flags=with_flags)
 
         if with_flags:
-            return values.get(key, default), cas_tokens.get(key), flags.get(key)
+            return values.get(key, default), cas_tokens.get(key), \
+                flags.get(key)
         else:
             return values.get(key, default), cas_tokens.get(key)
 
@@ -458,10 +458,10 @@ class BinaryClient(ClientBase):
     @staticmethod
     def _make_command(opcode, key=b'', data=b'', extra=b'', data_type=0,
                       status=0, opaque=0, cas_token=0):
-        return struct.pack('>BBHBBHLLQ', 0x80, int(opcode), len(key),
-                len(extra), data_type, status,
-                len(extra) + len(key) + len(data), opaque, cas_token) \
-                + extra + key + data
+        return struct.pack(
+            '>BBHBBHLLQ', 0x80, int(opcode), len(key), len(extra), data_type,
+            status, len(extra) + len(key) + len(data), opaque, cas_token) + \
+            extra + key + data
 
     @asyncio.coroutine
     def _send_command(self, conn, raw_command):
@@ -471,7 +471,7 @@ class BinaryClient(ClientBase):
     @asyncio.coroutine
     def _receive_response(self, conn):
         header = yield from conn.reader.read(24)
-        opcode, key_len, extra_len, data_type, status, body_len, opaque, cas = \
+        opcode, key_len, extra_len, data_type, status, body_len, _, cas = \
             struct.unpack('>xBHBBHLLQ', header)
 
         if extra_len:
@@ -490,7 +490,7 @@ class BinaryClient(ClientBase):
         else:
             data = b''
 
-        return (opcode, key, data, extra, status, opaque, cas)
+        return (opcode, key, data, extra, status, cas)
 
     @asyncio.coroutine
     def _execute_simple_command(self, conn, raw_command):
@@ -524,7 +524,7 @@ class BinaryClient(ClientBase):
         # that key to know when the server is done sending responses
         key = None
         while key != keys[-1]:
-            opcode, key, data, extra, status, opaque, cas = \
+            opcode, key, data, extra, status, cas = \
                 yield from self._receive_response(conn)
 
             if status == const.StatusCode.NO_ERROR:
@@ -553,8 +553,8 @@ class BinaryClient(ClientBase):
         """
         assert self._validate_key(key)
 
-        status = yield from self._execute_simple_command(conn,
-            self._make_command(const.Opcode.DELETE, key))
+        status = yield from self._execute_simple_command(
+            conn, self._make_command(const.Opcode.DELETE, key))
 
         if status == const.StatusCode.NO_ERROR:
             return True
@@ -578,11 +578,12 @@ class BinaryClient(ClientBase):
         # containing a blank key
         ret = {}
         while True:
-            _, key, data, _, status, _, _ = yield from self._receive_response(conn)
+            _, key, data, _, status, _ = yield from self._receive_response(
+                conn)
 
             if status != const.StatusCode.NO_ERROR:
-                raise ClientException('store (%d) failed; key=%r, status=%r' % (
-                    opcode, key, status))
+                raise ClientException('stats failed; key=%r, status=%r' % (
+                    key, status))
 
             if not key:
                 return ret
@@ -590,8 +591,8 @@ class BinaryClient(ClientBase):
             ret[key] = data
 
     @asyncio.coroutine
-    def _execute_storage_command(self, conn, opcode, key, value, flags, exptime,
-                                 cas_token=0):
+    def _execute_storage_command(self, conn, opcode, key, value, flags,
+                                 exptime, cas_token=0):
         if key:
             assert self._validate_key(key)
 
@@ -608,8 +609,8 @@ class BinaryClient(ClientBase):
             extra = struct.pack('>l', exptime)
         else:
             extra = struct.pack('>Ll', flags, exptime)
-        command = self._make_command(opcode, key, value, extra,
-            cas_token=cas_token)
+        command = self._make_command(
+            opcode, key, value, extra, cas_token=cas_token)
         status = yield from self._execute_simple_command(conn, command)
 
         if status == const.StatusCode.NO_ERROR:
@@ -633,8 +634,8 @@ class BinaryClient(ClientBase):
         :param flags: ``int``, flags to store along with value.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn, const.Opcode.SET,
-            key, value, flags, exptime))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.SET, key, value, flags, exptime))
 
     @acquire
     def cas(self, conn, key, value, cas_token, exptime=0, flags=0):
@@ -651,8 +652,9 @@ class BinaryClient(ClientBase):
             ``gets``
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn, const.Opcode.SET,
-            key, value, flags, exptime, cas_token=cas_token))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.SET, key, value, flags, exptime,
+            cas_token=cas_token))
 
     @acquire
     def add(self, conn, key, value, exptime=0, flags=0):
@@ -666,8 +668,8 @@ class BinaryClient(ClientBase):
         :param flags: ``int``, flags to store along with value.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn, const.Opcode.ADD,
-            key, value, flags, exptime))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.ADD, key, value, flags, exptime))
 
     @acquire
     def replace(self, conn, key, value, exptime=0, flags=0):
@@ -681,8 +683,8 @@ class BinaryClient(ClientBase):
         :param flags: ``int``, flags to store along with value.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn,
-            const.Opcode.REPLACE, key, value, flags, exptime))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.REPLACE, key, value, flags, exptime))
 
     @acquire
     def append(self, conn, key, value):
@@ -692,8 +694,8 @@ class BinaryClient(ClientBase):
         :param value: ``bytes``, data to store.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn,
-            const.Opcode.APPEND, key, value, None, None))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.APPEND, key, value, None, None))
 
     @acquire
     def prepend(self, conn, key, value):
@@ -703,8 +705,8 @@ class BinaryClient(ClientBase):
         :param value: ``bytes``, data to store.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn,
-            const.Opcode.PREPEND, key, value, None, None))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.PREPEND, key, value, None, None))
 
     @asyncio.coroutine
     def _execute_incr_decr(self, conn, opcode, key, default, delta, exptime=0):
@@ -719,7 +721,7 @@ class BinaryClient(ClientBase):
             extra = struct.pack('>QQl', delta, default, exptime)
         command = self._make_command(opcode, key, extra=extra)
         yield from self._send_command(conn, command)
-        _, _, data, _, status, _, _ = yield from self._receive_response(conn)
+        _, _, data, _, status, _ = yield from self._receive_response(conn)
 
         if status == const.StatusCode.NO_ERROR:
             return struct.unpack('>q', data)[0]
@@ -743,8 +745,8 @@ class BinaryClient(ClientBase):
         after the increment or ``None`` to indicate the item with
         this value was not found
         """
-        return (yield from self._execute_incr_decr(conn, const.Opcode.INCR, key,
-            default, increment))
+        return (yield from self._execute_incr_decr(
+            conn, const.Opcode.INCR, key, default, increment))
 
     @acquire
     def decr(self, conn, key, decrement=1, default=None):
@@ -760,8 +762,8 @@ class BinaryClient(ClientBase):
         after the increment or ``None`` to indicate the item with
         this value was not found
         """
-        return (yield from self._execute_incr_decr(conn, const.Opcode.DECR, key,
-            default, decrement))
+        return (yield from self._execute_incr_decr(
+            conn, const.Opcode.DECR, key, default, decrement))
 
     @acquire
     def touch(self, conn, key, exptime):
@@ -773,8 +775,8 @@ class BinaryClient(ClientBase):
         expiration time.
         :return: ``bool``, True in case of success.
         """
-        return (yield from self._execute_storage_command(conn,
-            const.Opcode.TOUCH, key, b'', None, exptime))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.TOUCH, key, b'', None, exptime))
 
     @acquire
     def version(self, conn):
@@ -784,7 +786,7 @@ class BinaryClient(ClientBase):
         """
         yield from self._send_command(conn, self._make_command(
             const.Opcode.VERSION))
-        _, _, data, _, status, _, _ = yield from self._receive_response(conn)
+        _, _, data, _, status, _ = yield from self._receive_response(conn)
 
         # can this command ever fail? do we need to check the status at all?
         if status == const.StatusCode.NO_ERROR:
@@ -794,5 +796,5 @@ class BinaryClient(ClientBase):
 
     @acquire
     def flush_all(self, conn, exptime=0):
-        return (yield from self._execute_storage_command(conn,
-            const.Opcode.FLUSH, b'', b'', None, exptime))
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.FLUSH, b'', b'', None, exptime))
