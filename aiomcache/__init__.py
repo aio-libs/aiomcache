@@ -9,9 +9,9 @@ Usage example::
     yield from mc.delete("another_key")
 """
 
-from .client import Client
+from .client import Client, BinaryClient
 from .exceptions import ClientException, ValidationException
 
-__all__ = ('Client', 'ClientException', 'ValidationException')
+__all__ = ('Client', 'BinaryClient', 'ClientException', 'ValidationException')
 
 __version__ = '0.5.2'

@@ -299,3 +299,10 @@ def mcache(mcache_params, loop):
     client = aiomcache.Client(loop=loop, **mcache_params)
     yield client
     client.close()
+
+
+@pytest.yield_fixture
+def mcache_binary(mcache_params, loop):
+    client = aiomcache.BinaryClient(loop=loop, **mcache_params)
+    yield client
+    client.close()
