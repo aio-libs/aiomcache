@@ -65,30 +65,38 @@ class ClientBase(object):
         yield from self._pool.clear()
 
     @acquire
-    def get(self, conn, key, default=None):
+    def get(self, conn, key, default=None, with_flags=False):
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
         """
-        values, _, _ = yield from self._multi_get(conn, key)
-        return values.get(key, default)
+        values, _, flags = yield from self._multi_get(
+            conn, key, with_cas=False, with_flags=with_flags)
+        if with_flags:
+            return values.get(key, default), flags.get(key)
+        else:
+            return values.get(key, default)
 
     @acquire
-    def gets(self, conn, key, default=None):
+    def gets(self, conn, key, default=None, with_flags=False):
         """Gets a single value from the server together with the cas token.
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, ``bytes tuple with the value and the cas
         """
-        values, cas_tokens, _ = yield from self._multi_get(
-            conn, key, with_cas=True)
-        return values.get(key, default), cas_tokens.get(key)
+        values, cas_tokens, flags = yield from self._multi_get(
+            conn, key, with_cas=True, with_flags=with_flags)
+
+        if with_flags:
+            return values.get(key, default), cas_tokens.get(key), flags.get(key)
+        else:
+            return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    def multi_get(self, conn, *keys):
+    def multi_get(self, conn, *keys, with_cas=False, with_flags=False):
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -96,8 +104,20 @@ class ClientBase(object):
         :raises:``ValidationException``, ``ClientException``,
         and socket errors
         """
-        values, _, _ = yield from self._multi_get(conn, *keys)
-        return tuple(values.get(key) for key in keys)
+        values, cas_tokens, flags = yield from self._multi_get(
+            conn, *keys, with_cas=with_cas, with_flags=with_flags)
+        if with_cas:
+            if with_flags:
+                return tuple((values.get(key), cas_tokens.get(key),
+                              flags.get(key)) for key in keys)
+            else:
+                return tuple((values.get(key), cas_tokens.get(key))
+                             for key in keys)
+        else:
+            if with_flags:
+                return tuple((values.get(key), flags.get(key)) for key in keys)
+            else:
+                return tuple(values.get(key) for key in keys)
 
 
 class Client(ClientBase):
@@ -115,12 +135,14 @@ class Client(ClientBase):
         return response[:-2]
 
     @asyncio.coroutine
-    def _multi_get(self, conn, *keys, with_cas=True):
+    def _multi_get(self, conn, *keys, with_flags=False, with_cas=False):
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
         #        [...]
         #        END\r\n
+        assert not with_flags, "ascii client does not yet support flags"
+
         if not keys:
             return {}, {}, {}
 
@@ -477,7 +499,7 @@ class BinaryClient(ClientBase):
         return (yield from self._receive_response(conn))[4]
 
     @asyncio.coroutine
-    def _multi_get(self, conn, *keys, with_cas=True, with_flags=True):
+    def _multi_get(self, conn, *keys, with_cas=False, with_flags=False):
         if not keys:
             return {}, {}, {}
 
