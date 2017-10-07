@@ -141,8 +141,6 @@ class Client(ClientBase):
         #        <data block>\r\n (if exists)
         #        [...]
         #        END\r\n
-        assert not with_flags, "ascii client does not yet support flags"
-
         if not keys:
             return {}, {}, {}
 
@@ -155,6 +153,7 @@ class Client(ClientBase):
 
         received = {}
         cas_tokens = {}
+        key_flags = {}
         line = yield from conn.reader.readline()
 
         while line != b'END\r\n':
@@ -165,15 +164,15 @@ class Client(ClientBase):
                 flags = int(terms[2])
                 length = int(terms[3])
 
-                if flags != 0:
-                    raise ClientException('received non zero flags')
-
                 val = (yield from conn.reader.readexactly(length+2))[:-2]
                 if key in received:
                     raise ClientException('duplicate results from server')
 
                 received[key] = val
-                cas_tokens[key] = int(terms[4]) if with_cas else None
+                if with_cas:
+                    cas_tokens[key] = int(terms[4]) if with_cas else None
+                if with_flags:
+                    key_flags[key] = flags
             else:
                 raise ClientException('get failed', line)
 
@@ -181,7 +180,7 @@ class Client(ClientBase):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
-        return received, cas_tokens, {}
+        return received, cas_tokens, key_flags
 
     @acquire
     def delete(self, conn, key):
@@ -267,7 +266,7 @@ class Client(ClientBase):
         return resp == const.STORED
 
     @acquire
-    def set(self, conn, key, value, exptime=0):
+    def set(self, conn, key, value, exptime=0, flags=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -277,13 +276,12 @@ class Client(ClientBase):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'set', key, value, flags, exptime)
         return resp
 
     @acquire
-    def cas(self, conn, key, value, cas_token, exptime=0):
+    def cas(self, conn, key, value, cas_token, exptime=0, flags=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't change from first retrieval
@@ -296,13 +294,12 @@ class Client(ClientBase):
             ``gets``
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'cas', key, value, flags, exptime, cas=cas_token)
         return resp
 
     @acquire
-    def add(self, conn, key, value, exptime=0):
+    def add(self, conn, key, value, exptime=0, flags=0):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -312,12 +309,11 @@ class Client(ClientBase):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'add', key, value, flags, exptime))
 
     @acquire
-    def replace(self, conn, key, value, exptime=0):
+    def replace(self, conn, key, value, exptime=0, flags=0):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -327,12 +323,11 @@ class Client(ClientBase):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'replace', key, value, flags, exptime))
 
     @acquire
-    def append(self, conn, key, value, exptime=0):
+    def append(self, conn, key, value, exptime=0, flags=0):
         """Add data to an existing key after existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -341,12 +336,11 @@ class Client(ClientBase):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'append', key, value, flags, exptime))
 
     @acquire
-    def prepend(self, conn, key, value, exptime=0):
+    def prepend(self, conn, key, value, exptime=0, flags=0):
         """Add data to an existing key before existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -355,7 +349,6 @@ class Client(ClientBase):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'prepend', key, value, flags, exptime))
 
@@ -470,23 +463,23 @@ class BinaryClient(ClientBase):
 
     @asyncio.coroutine
     def _receive_response(self, conn):
-        header = yield from conn.reader.read(24)
+        header = yield from conn.reader.readexactly(24)
         opcode, key_len, extra_len, data_type, status, body_len, _, cas = \
             struct.unpack('>xBHBBHLLQ', header)
 
         if extra_len:
-            extra = yield from conn.reader.read(extra_len)
+            extra = yield from conn.reader.readexactly(extra_len)
         else:
             extra = b''
 
         if key_len:
-            key = yield from conn.reader.read(key_len)
+            key = yield from conn.reader.readexactly(key_len)
         else:
             key = b''
 
         data_len = body_len - key_len - extra_len
         if data_len:
-            data = yield from conn.reader.read(data_len)
+            data = yield from conn.reader.readexactly(data_len)
         else:
             data = b''
 
@@ -509,11 +502,11 @@ class BinaryClient(ClientBase):
 
         # send GETQ for all keys except the last one
         # this allows the server to skip sending responses for missing keys
-        commands = b''.join(self._make_command(const.Opcode.GETKQ, k)
-                            for k in keys[:-1])
+        num_keys = len(keys)
+        commands = b''.join(self._make_command(
+            const.Opcode.GETK if (i == num_keys - 1) else const.Opcode.GETK, k)
+            for i, k in enumerate(keys))
         yield from self._send_command(conn, commands)
-        yield from self._send_command(conn, self._make_command(
-            const.Opcode.GETK, keys[-1]))
 
         key_to_value = {}
         key_to_cas = {}

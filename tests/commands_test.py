@@ -115,6 +115,21 @@ def test_set_expire(mcache, loop):
 
 
 @pytest.mark.run_loop
+def test_set_flags(mcache, loop):
+    key, value, flags = b'key:set', b'1', 0x1030FF9C
+    yield from mcache.set(key, value, flags=flags)
+
+    test_value, test_flags = yield from mcache.get(key, with_flags=True)
+    assert test_value == value
+    assert test_flags == flags
+
+    test_value, test_cas, test_flags = yield from mcache.gets(
+        key, with_flags=True)
+    assert test_value == value
+    assert test_flags == flags
+
+
+@pytest.mark.run_loop
 def test_set_errors(mcache):
     key, value = b'key:set', b'1'
     yield from mcache.set(key, value, exptime=1)
