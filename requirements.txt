@@ -4,5 +4,5 @@ pygments==2.2.0
 pytest==3.3.2
 pytest-cov==2.5.1
 pytest-sugar==0.9.0
-python-memcached==1.58
+python-memcached==1.59
 flake8==3.5.0
