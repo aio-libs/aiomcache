@@ -9,7 +9,8 @@ services:
   - docker
 
 install:
-  - pip install -Ur requirements.txt
+  - pip install -U setuptools
+  - pip install -r requirements.txt
   - pip install -e .
   - pip install codecov
 
