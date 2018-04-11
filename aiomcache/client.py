@@ -1,13 +1,14 @@
 import asyncio
 import functools
 import re
+import struct
 
 from . import constants as const
 from .pool import MemcachePool
 from .exceptions import ClientException, ValidationException
 
 
-__all__ = ['Client']
+__all__ = ['Client', 'BinaryClient']
 
 
 def acquire(func):
@@ -27,7 +28,7 @@ def acquire(func):
     return wrapper
 
 
-class Client(object):
+class ClientBase(object):
 
     def __init__(self, host, port=11211, *,
                  pool_size=2, pool_minsize=None, loop=None):
@@ -58,6 +59,70 @@ class Client(object):
         return key
 
     @asyncio.coroutine
+    def close(self):
+        """Closes the sockets if its open."""
+        yield from self._pool.clear()
+
+    @acquire
+    def get(self, conn, key, default=None, with_flags=False):
+        """Gets a single value from the server.
+
+        :param key: ``bytes``, is the key for the item being fetched
+        :param default: default value if there is no value.
+        :return: ``bytes``, is the data for this specified key.
+        """
+        values, _, flags = yield from self._multi_get(
+            conn, key, with_cas=False, with_flags=with_flags)
+        if with_flags:
+            return values.get(key, default), flags.get(key)
+        else:
+            return values.get(key, default)
+
+    @acquire
+    def gets(self, conn, key, default=None, with_flags=False):
+        """Gets a single value from the server together with the cas token.
+
+        :param key: ``bytes``, is the key for the item being fetched
+        :param default: default value if there is no value.
+        :return: ``bytes``, ``bytes tuple with the value and the cas
+        """
+        values, cas_tokens, flags = yield from self._multi_get(
+            conn, key, with_cas=True, with_flags=with_flags)
+
+        if with_flags:
+            return values.get(key, default), cas_tokens.get(key), \
+                flags.get(key)
+        else:
+            return values.get(key, default), cas_tokens.get(key)
+
+    @acquire
+    def multi_get(self, conn, *keys, with_cas=False, with_flags=False):
+        """Takes a list of keys and returns a list of values.
+
+        :param keys: ``list`` keys for the item being fetched.
+        :return: ``list`` of values for the specified keys.
+        :raises:``ValidationException``, ``ClientException``,
+        and socket errors
+        """
+        values, cas_tokens, flags = yield from self._multi_get(
+            conn, *keys, with_cas=with_cas, with_flags=with_flags)
+        if with_cas:
+            if with_flags:
+                return tuple((values.get(key), cas_tokens.get(key),
+                              flags.get(key)) for key in keys)
+            else:
+                return tuple((values.get(key), cas_tokens.get(key))
+                             for key in keys)
+        else:
+            if with_flags:
+                return tuple((values.get(key), flags.get(key)) for key in keys)
+            else:
+                return tuple(values.get(key) for key in keys)
+
+
+class Client(ClientBase):
+
+    @asyncio.coroutine
     def _execute_simple_command(self, conn, raw_command):
         response, line = bytearray(), b''
 
@@ -70,19 +135,14 @@ class Client(object):
         return response[:-2]
 
     @asyncio.coroutine
-    def close(self):
-        """Closes the sockets if its open."""
-        yield from self._pool.clear()
-
-    @asyncio.coroutine
-    def _multi_get(self, conn, *keys, with_cas=True):
+    def _multi_get(self, conn, *keys, with_flags=False, with_cas=False):
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
         #        [...]
         #        END\r\n
         if not keys:
-            return {}, {}
+            return {}, {}, {}
 
         [self._validate_key(key) for key in keys]
         if len(set(keys)) != len(keys):
@@ -93,6 +153,7 @@ class Client(object):
 
         received = {}
         cas_tokens = {}
+        key_flags = {}
         line = yield from conn.reader.readline()
 
         while line != b'END\r\n':
@@ -103,15 +164,15 @@ class Client(object):
                 flags = int(terms[2])
                 length = int(terms[3])
 
-                if flags != 0:
-                    raise ClientException('received non zero flags')
-
                 val = (yield from conn.reader.readexactly(length+2))[:-2]
                 if key in received:
                     raise ClientException('duplicate results from server')
 
                 received[key] = val
-                cas_tokens[key] = int(terms[4]) if with_cas else None
+                if with_cas:
+                    cas_tokens[key] = int(terms[4]) if with_cas else None
+                if with_flags:
+                    key_flags[key] = flags
             else:
                 raise ClientException('get failed', line)
 
@@ -119,7 +180,7 @@ class Client(object):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
-        return received, cas_tokens
+        return received, cas_tokens, key_flags
 
     @acquire
     def delete(self, conn, key):
@@ -134,44 +195,12 @@ class Client(object):
         command = b'delete ' + key + b'\r\n'
         response = yield from self._execute_simple_command(conn, command)
 
-        if response not in (const.DELETED, const.NOT_FOUND):
-            raise ClientException('Memcached delete failed', response)
-        return response == const.DELETED
+        if response == const.DELETED:
+            return True
+        elif response == const.NOT_FOUND:
+            return False
 
-    @acquire
-    def get(self, conn, key, default=None):
-        """Gets a single value from the server.
-
-        :param key: ``bytes``, is the key for the item being fetched
-        :param default: default value if there is no value.
-        :return: ``bytes``, is the data for this specified key.
-        """
-        values, _ = yield from self._multi_get(conn, key)
-        return values.get(key, default)
-
-    @acquire
-    def gets(self, conn, key, default=None):
-        """Gets a single value from the server together with the cas token.
-
-        :param key: ``bytes``, is the key for the item being fetched
-        :param default: default value if there is no value.
-        :return: ``bytes``, ``bytes tuple with the value and the cas
-        """
-        values, cas_tokens = yield from self._multi_get(
-            conn, key, with_cas=True)
-        return values.get(key, default), cas_tokens.get(key)
-
-    @acquire
-    def multi_get(self, conn, *keys):
-        """Takes a list of keys and returns a list of values.
-
-        :param keys: ``list`` keys for the item being fetched.
-        :return: ``list`` of values for the specified keys.
-        :raises:``ValidationException``, ``ClientException``,
-        and socket errors
-        """
-        values, _ = yield from self._multi_get(conn, *keys)
-        return tuple(values.get(key) for key in keys)
+        raise ClientException('Memcached delete failed', response)
 
     @acquire
     def stats(self, conn, args=None):
@@ -237,7 +266,7 @@ class Client(object):
         return resp == const.STORED
 
     @acquire
-    def set(self, conn, key, value, exptime=0):
+    def set(self, conn, key, value, exptime=0, flags=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -247,13 +276,12 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'set', key, value, flags, exptime)
         return resp
 
     @acquire
-    def cas(self, conn, key, value, cas_token, exptime=0):
+    def cas(self, conn, key, value, cas_token, exptime=0, flags=0):
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't change from first retrieval
@@ -266,13 +294,12 @@ class Client(object):
             ``gets``
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         resp = yield from self._storage_command(
             conn, b'cas', key, value, flags, exptime, cas=cas_token)
         return resp
 
     @acquire
-    def add(self, conn, key, value, exptime=0):
+    def add(self, conn, key, value, exptime=0, flags=0):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -282,12 +309,11 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'add', key, value, flags, exptime))
 
     @acquire
-    def replace(self, conn, key, value, exptime=0):
+    def replace(self, conn, key, value, exptime=0, flags=0):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -297,12 +323,11 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'replace', key, value, flags, exptime))
 
     @acquire
-    def append(self, conn, key, value, exptime=0):
+    def append(self, conn, key, value, exptime=0, flags=0):
         """Add data to an existing key after existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -311,12 +336,11 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'append', key, value, flags, exptime))
 
     @acquire
-    def prepend(self, conn, key, value, exptime=0):
+    def prepend(self, conn, key, value, exptime=0, flags=0):
         """Add data to an existing key before existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -325,7 +349,6 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
         return (yield from self._storage_command(
             conn, b'prepend', key, value, flags, exptime))
 
@@ -404,8 +427,7 @@ class Client(object):
         """
 
         command = b'version\r\n'
-        response = yield from self._execute_simple_command(
-            conn, command)
+        response = yield from self._execute_simple_command(conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
         version, number = response.split()
@@ -415,8 +437,357 @@ class Client(object):
     def flush_all(self, conn):
         """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
-        response = yield from self._execute_simple_command(
-            conn, command)
+        response = yield from self._execute_simple_command(conn, command)
 
         if const.OK != response:
             raise ClientException('Memcached flush_all failed', response)
+
+
+class BinaryClient(ClientBase):
+
+    # binary protocol description:
+    # https://github.com/memcached/memcached/blob/master/doc/protocol-binary.xml
+
+    @staticmethod
+    def _make_command(opcode, key=b'', data=b'', extra=b'', data_type=0,
+                      status=0, opaque=0, cas_token=0):
+        return struct.pack(
+            '>BBHBBHLLQ', 0x80, int(opcode), len(key), len(extra), data_type,
+            status, len(extra) + len(key) + len(data), opaque, cas_token) + \
+            extra + key + data
+
+    @asyncio.coroutine
+    def _send_command(self, conn, raw_command):
+        conn.writer.write(raw_command)
+        yield from conn.writer.drain()
+
+    @asyncio.coroutine
+    def _receive_response(self, conn):
+        header = yield from conn.reader.readexactly(24)
+        opcode, key_len, extra_len, data_type, status, body_len, _, cas = \
+            struct.unpack('>xBHBBHLLQ', header)
+
+        if extra_len:
+            extra = yield from conn.reader.readexactly(extra_len)
+        else:
+            extra = b''
+
+        if key_len:
+            key = yield from conn.reader.readexactly(key_len)
+        else:
+            key = b''
+
+        data_len = body_len - key_len - extra_len
+        if data_len:
+            data = yield from conn.reader.readexactly(data_len)
+        else:
+            data = b''
+
+        return (opcode, key, data, extra, status, cas)
+
+    @asyncio.coroutine
+    def _execute_simple_command(self, conn, raw_command):
+        # send a command and return the response status
+        yield from self._send_command(conn, raw_command)
+        return (yield from self._receive_response(conn))[4]
+
+    @asyncio.coroutine
+    def _multi_get(self, conn, *keys, with_cas=False, with_flags=False):
+        if not keys:
+            return {}, {}, {}
+
+        if len(set(keys)) != len(keys):
+            raise ClientException('duplicate keys passed to multi_get')
+        [self._validate_key(key) for key in keys]
+
+        # send GETQ for all keys except the last one
+        # this allows the server to skip sending responses for missing keys
+        num_keys = len(keys)
+        commands = b''.join(self._make_command(
+            const.Opcode.GETK if (i == num_keys - 1) else const.Opcode.GETK, k)
+            for i, k in enumerate(keys))
+        yield from self._send_command(conn, commands)
+
+        key_to_value = {}
+        key_to_cas = {}
+        key_to_flags = {}
+
+        # we sent getk (not getkq) for the last key, so the server will always
+        # send a response for that key, and it will be last - we can check for
+        # that key to know when the server is done sending responses
+        key = None
+        while key != keys[-1]:
+            opcode, key, data, extra, status, cas = \
+                yield from self._receive_response(conn)
+
+            if status == const.StatusCode.NO_ERROR:
+                key_to_value[key] = data
+                if with_flags:
+                    key_to_flags[key] = struct.unpack('>L', extra)[0]
+                if with_cas:
+                    key_to_cas[key] = cas
+
+            elif status == const.StatusCode.KEY_NOT_FOUND:
+                continue  # must be the last key
+
+            else:
+                raise ClientException('get failed; key=%r, status=%r' % (
+                    key, status))
+
+        return (key_to_value, key_to_cas, key_to_flags)
+
+    @acquire
+    def delete(self, conn, key):
+        """Deletes a key/value pair from the server.
+
+        :param key: is the key to delete.
+        :return: True if case values was deleted or False to indicate
+        that the item with this key was not found.
+        """
+        assert self._validate_key(key)
+
+        status = yield from self._execute_simple_command(
+            conn, self._make_command(const.Opcode.DELETE, key))
+
+        if status == const.StatusCode.NO_ERROR:
+            return True
+        if status == const.StatusCode.KEY_NOT_FOUND:
+            return False
+        raise ClientException('delete failed; key=%r, status=%r' % (
+            key, status))
+
+    @acquire
+    def stats(self, conn, key=None):
+        """Runs a stats command on the server."""
+        if key:
+            assert self._validate_key(key)
+            yield from self._send_command(conn, self._make_command(
+                const.Opcode.STAT, key))
+        else:
+            yield from self._send_command(conn, self._make_command(
+                const.Opcode.STAT))
+
+        # the server responds with multiple stat responses, ending with one
+        # containing a blank key
+        ret = {}
+        while True:
+            _, key, data, _, status, _ = yield from self._receive_response(
+                conn)
+
+            if status != const.StatusCode.NO_ERROR:
+                raise ClientException('stats failed; key=%r, status=%r' % (
+                    key, status))
+
+            if not key:
+                return ret
+
+            ret[key] = data
+
+    @asyncio.coroutine
+    def _execute_storage_command(self, conn, opcode, key, value, flags,
+                                 exptime, cas_token=0):
+        if key:
+            assert self._validate_key(key)
+
+        if exptime is not None:
+            if not isinstance(exptime, int):
+                raise ValidationException('exptime is not an integer', exptime)
+            elif exptime < 0:
+                raise ValidationException('exptime is negative', exptime)
+
+        # append/prepend don't take extra data, but the others do
+        if (flags is None) and (exptime is None):
+            extra = b''
+        elif flags is None:
+            extra = struct.pack('>l', exptime)
+        else:
+            extra = struct.pack('>Ll', flags, exptime)
+        command = self._make_command(
+            opcode, key, value, extra, cas_token=cas_token)
+        status = yield from self._execute_simple_command(conn, command)
+
+        if status == const.StatusCode.NO_ERROR:
+            return True
+        if status in (const.StatusCode.NOT_STORED, const.StatusCode.KEY_EXISTS,
+                      const.StatusCode.KEY_NOT_FOUND):
+            return False
+
+        raise ClientException('store (%d) failed; key=%r, status=%r' % (
+            opcode, key, status))
+
+    @acquire
+    def set(self, conn, key, value, exptime=0, flags=0):
+        """Sets a key to a value on the server
+        with an optional exptime (0 means don't auto-expire)
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int``, is expiration time. If it's 0, the
+            item never expires.
+        :param flags: ``int``, flags to store along with value.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.SET, key, value, flags, exptime))
+
+    @acquire
+    def cas(self, conn, key, value, cas_token, exptime=0, flags=0):
+        """Sets a key to a value on the server
+        with an optional exptime (0 means don't auto-expire)
+        only if value hasn't change from first retrieval
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int``, is expiration time. If it's 0, the
+            item never expires.
+        :param flags: ``int``, flags to store along with value.
+        :param cas_token: ``int``, unique cas token retrieve from previous
+            ``gets``
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.SET, key, value, flags, exptime,
+            cas_token=cas_token))
+
+    @acquire
+    def add(self, conn, key, value, exptime=0, flags=0):
+        """Store this data, but only if the server *doesn't* already
+        hold data for this key.
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``,  data to store.
+        :param exptime: ``int`` is expiration time. If it's 0, the
+            item never expires.
+        :param flags: ``int``, flags to store along with value.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.ADD, key, value, flags, exptime))
+
+    @acquire
+    def replace(self, conn, key, value, exptime=0, flags=0):
+        """Store this data, but only if the server *does*
+        already hold data for this key.
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :param exptime: ``int`` is expiration time. If it's 0, the
+            item never expires.
+        :param flags: ``int``, flags to store along with value.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.REPLACE, key, value, flags, exptime))
+
+    @acquire
+    def append(self, conn, key, value):
+        """Add data to an existing key after existing data
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.APPEND, key, value, None, None))
+
+    @acquire
+    def prepend(self, conn, key, value):
+        """Add data to an existing key before existing data
+
+        :param key: ``bytes``, is the key of the item.
+        :param value: ``bytes``, data to store.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.PREPEND, key, value, None, None))
+
+    @asyncio.coroutine
+    def _execute_incr_decr(self, conn, opcode, key, default, delta, exptime=0):
+        assert self._validate_key(key)
+
+        if not isinstance(delta, int):
+            raise ValidationException('delta is not an integer', exptime)
+
+        if default is None:
+            extra = struct.pack('>QQl', delta, 0, -1)
+        else:
+            extra = struct.pack('>QQl', delta, default, exptime)
+        command = self._make_command(opcode, key, extra=extra)
+        yield from self._send_command(conn, command)
+        _, _, data, _, status, _ = yield from self._receive_response(conn)
+
+        if status == const.StatusCode.NO_ERROR:
+            return struct.unpack('>q', data)[0]
+        if status == const.StatusCode.NOT_STORED:
+            return None
+
+        raise ClientException('incr/decr (%d) failed; key=%r, status=%r' % (
+            opcode, key, status))
+
+    @acquire
+    def incr(self, conn, key, increment=1, default=None):
+        """Command is used to change data for some item in-place,
+        incrementing it. The data for the item is treated as decimal
+        representation of a 64-bit unsigned integer.
+
+        :param key: ``bytes``, is the key of the item the client wishes
+        to change
+        :param increment: ``int``, is the amount by which the client
+        wants to increase the item.
+        :return: ``int``, new value of the item's data,
+        after the increment or ``None`` to indicate the item with
+        this value was not found
+        """
+        return (yield from self._execute_incr_decr(
+            conn, const.Opcode.INCR, key, default, increment))
+
+    @acquire
+    def decr(self, conn, key, decrement=1, default=None):
+        """Command is used to change data for some item in-place,
+        decrementing it. The data for the item is treated as decimal
+        representation of a 64-bit unsigned integer.
+
+        :param key: ``bytes``, is the key of the item the client wishes
+        to change
+        :param decrement: ``int``, is the amount by which the client
+        wants to decrease the item.
+        :return: ``int`` new value of the item's data,
+        after the increment or ``None`` to indicate the item with
+        this value was not found
+        """
+        return (yield from self._execute_incr_decr(
+            conn, const.Opcode.DECR, key, default, decrement))
+
+    @acquire
+    def touch(self, conn, key, exptime):
+        """The command is used to update the expiration time of
+        an existing item without fetching it.
+
+        :param key: ``bytes``, is the key to update expiration time
+        :param exptime: ``int``, is expiration time. This replaces the existing
+        expiration time.
+        :return: ``bool``, True in case of success.
+        """
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.TOUCH, key, b'', None, exptime))
+
+    @acquire
+    def version(self, conn):
+        """Current version of the server.
+
+        :return: ``bytes``, memcached version for current the server.
+        """
+        yield from self._send_command(conn, self._make_command(
+            const.Opcode.VERSION))
+        _, _, data, _, status, _ = yield from self._receive_response(conn)
+
+        # can this command ever fail? do we need to check the status at all?
+        if status == const.StatusCode.NO_ERROR:
+            return data
+
+        raise ClientException('version failed; status=%r' % (status,))
+
+    @acquire
+    def flush_all(self, conn, exptime=0):
+        return (yield from self._execute_storage_command(
+            conn, const.Opcode.FLUSH, b'', b'', None, exptime))
