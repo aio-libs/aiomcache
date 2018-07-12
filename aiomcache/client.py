@@ -28,7 +28,8 @@ def acquire(func):
 
 class Client:
     def __init__(self, host, port=11211, *,
-                 pool_size=2, pool_minsize=None, loop=None, value_flag_handler=None):
+                 pool_size=2, pool_minsize=None, loop=None,
+                 value_flag_handler=None):
         """
         Creates new Client instance.
 
@@ -37,9 +38,9 @@ class Client:
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
         :param loop: asyncio loop instance
-        :param value_flag_handler: async method to call to process flagged values.
-            Method takes tuple: (value, flags) and should return processed value or
-            raise ClientException if not supported.
+        :param value_flag_handler: async method to call to process flagged
+            values. Method takes tuple: (value, flags) and should return
+            processed value or raise ClientException if not supported.
         """
         if not pool_minsize:
             pool_minsize = pool_size
@@ -159,7 +160,7 @@ class Client:
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
-         value based on flag.  Should raise ClientException on unsupported flag.
+         value based on flag.
         :return: ``bytes``, is the data for this specified key.
         """
         values, _ = yield from self._multi_get(conn, key)
@@ -171,7 +172,7 @@ class Client:
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
-         value based on flag.  Should raise ClientException on unsupported flag.
+         value based on flag.
         :return: ``bytes``, ``bytes tuple with the value and the cas
         """
         values, cas_tokens = yield from self._multi_get(
@@ -183,7 +184,7 @@ class Client:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
-         value based on flag.  Should raise ClientException on unsupported flag.
+         value based on flag.
         :return: ``list`` of values for the specified keys.
         :raises:``ValidationException``, ``ClientException``,
         and socket errors

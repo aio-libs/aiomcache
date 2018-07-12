@@ -9,7 +9,8 @@ class PyLibMCFlags(IntEnum):
     PYLIBMC_FLAG_BOOL = 1 << 4
 
 
-# see: https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640 (_PylibMC_deserialize_native)
+# see PylibMC_deserialize_native in:
+# https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640
 async def pylibmc_flag_handler(value, flags):
     if flags == PyLibMCFlags.PYLIBMC_FLAG_PICKLE:
         return pickle.loads(value)
