@@ -3,7 +3,7 @@
 Usage example::
 
     import aiomcache
-    mc = aiomcache.Client("127.0.0.1", 11211, timeout=1, connect_timeout=5)
+    mc = aiomcache.Client("127.0.0.1", 11211)
     yield from mc.set("some_key", "Some value")
     value = yield from mc.get("some_key")
     yield from mc.delete("another_key")
