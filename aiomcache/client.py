@@ -246,7 +246,7 @@ class Client:
 
         if flags == 0 and self._set_flag_handler and \
                 not isinstance(value, bytes):
-            value, flags = self._set_flag_handler(value)
+            value, flags = yield from self._set_flag_handler(value)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
