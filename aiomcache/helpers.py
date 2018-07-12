@@ -22,7 +22,7 @@ def pylibmc_get_flag_handler(value, flags):
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_BOOL:
         return bool(int(value))
     else:
-        assert False
+        assert False  # pragma: no cover
 
 
 # see _PylibMC_serialize_native in:
