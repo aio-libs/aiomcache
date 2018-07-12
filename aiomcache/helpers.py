@@ -3,6 +3,7 @@ from enum import IntEnum
 import pickle
 
 
+# https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.h#L63
 class PyLibMCFlags(IntEnum):
     PYLIBMC_FLAG_PICKLE = 1 << 0
     PYLIBMC_FLAG_INTEGER = 1 << 1
@@ -28,13 +29,14 @@ def pylibmc_get_flag_handler(value, flags):
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L1241
 @asyncio.coroutine
 def pylibmc_set_flag_handler(value):
-    if isinstance(value, int):
-        return str(value).encode('utf-8'), \
-               PyLibMCFlags.PYLIBMC_FLAG_LONG.value
-
+    # bool is subclass of int so this needs to be first
     if isinstance(value, bool):
         return b'1' if value else b'0', \
                PyLibMCFlags.PYLIBMC_FLAG_BOOL.value
+
+    if isinstance(value, int):
+        return str(value).encode('utf-8'), \
+               PyLibMCFlags.PYLIBMC_FLAG_LONG.value
 
     # default is pickle
     return pickle.dumps(value), PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value
