@@ -12,7 +12,7 @@ import warnings
 import docker as docker_mod
 
 import memcache
-import aiomcache
+import aiomcache.helpers
 
 
 mcache_server_option = None
@@ -297,5 +297,12 @@ def mcache_params(mcache_server):
 @pytest.yield_fixture
 def mcache(mcache_params, loop):
     client = aiomcache.Client(loop=loop, **mcache_params)
+    yield client
+    client.close()
+
+
+@pytest.yield_fixture
+def mcache_pylibmc(mcache_params, loop):
+    client = aiomcache.Client(loop=loop, **mcache_params, value_flag_handler=aiomcache.helpers.pylibmc_flag_handler)
     yield client
     client.close()

@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import pylibmc
 from unittest import mock
 
 from aiomcache.exceptions import ClientException, ValidationException
@@ -338,3 +339,25 @@ def test_touch(mcache, loop):
 def test_close(mcache):
     yield from mcache.close()
     assert mcache._pool.size() == 0
+
+
+@pytest.mark.run_loop
+def test_pylibmc_helper(mcache_params, mcache_pylibmc):
+    mc_client = pylibmc.Client(['{}:{}'.format(*mcache_params)])
+
+    key_values = [
+        ['key', 'key'],
+        [b'bkey', b'bkey'],
+        ['False', False],
+        ['1', 1],
+        ['None', None],
+        ['0.5', 0.5],
+        ['[1,2,3]', [1, 2, 3]],
+        ['(1,2,3)', tuple([1, 2, 3])],
+    ]
+
+    for key, value in key_values:
+        mc_client.set(key, value)
+
+        v2 = yield from mcache_pylibmc.get(key)
+        assert v2 == value
