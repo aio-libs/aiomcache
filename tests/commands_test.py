@@ -342,8 +342,8 @@ def test_close(mcache):
 
 
 @pytest.mark.run_loop
-def test_pylibmc_helper(mcache_params, mcache_pylibmc):
-    mc_client = pylibmc.Client(['{}:{}'.format(*mcache_params)])
+def test_pylibmc_helper(mcache_pylibmc):
+    mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host, mcache_pylibmc._pool._port)])
 
     key_values = [
         ['key', 'key'],
