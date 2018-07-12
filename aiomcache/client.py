@@ -160,7 +160,7 @@ class Client:
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
-         value based on flag.
+         value based on flag.  Should raise ClientException on unsupported flag.
         :return: ``bytes``, is the data for this specified key.
         """
         values, _ = yield from self._multi_get(conn, key)
@@ -172,7 +172,7 @@ class Client:
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
-         value based on flag.
+         value based on flag.  Should raise ClientException on unsupported flag.
         :return: ``bytes``, ``bytes tuple with the value and the cas
         """
         values, cas_tokens = yield from self._multi_get(
@@ -184,7 +184,7 @@ class Client:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
-         value based on flag.
+         value based on flag.  Should raise ClientException on unsupported flag.
         :return: ``list`` of values for the specified keys.
         :raises:``ValidationException``, ``ClientException``,
         and socket errors
