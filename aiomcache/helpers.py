@@ -1,3 +1,4 @@
+import asyncio
 from enum import IntEnum
 import pickle
 
@@ -11,7 +12,8 @@ class PyLibMCFlags(IntEnum):
 
 # see PylibMC_deserialize_native in:
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640
-async def pylibmc_flag_handler(value, flags):
+@asyncio.coroutine
+def pylibmc_get_flag_handler(value, flags):
     if flags == PyLibMCFlags.PYLIBMC_FLAG_PICKLE:
         return pickle.loads(value)
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_LONG:
@@ -20,3 +22,18 @@ async def pylibmc_flag_handler(value, flags):
         return bool(int(value))
     else:
         assert False
+
+
+@asyncio.coroutine
+def pylibmc_set_flag_handler(value):
+    if isinstance(value, int):
+        return str(value).encode('utf-8'), \
+               PyLibMCFlags.PYLIBMC_FLAG_LONG.value
+
+    if isinstance(value, bool):
+        return str(int(value)).encode('utf-8'), \
+               PyLibMCFlags.PYLIBMC_FLAG_BOOL.value
+
+    # default is pickle
+    return pickle.dumps(value), \
+           PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value

@@ -29,7 +29,7 @@ def acquire(func):
 class Client:
     def __init__(self, host, port=11211, *,
                  pool_size=2, pool_minsize=None, loop=None,
-                 value_flag_handler=None):
+                 get_flag_handler=None, set_flag_handler=None):
         """
         Creates new Client instance.
 
@@ -38,9 +38,12 @@ class Client:
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
         :param loop: asyncio loop instance
-        :param value_flag_handler: async method to call to process flagged
+        :param get_flag_handler: async method to call to convert flagged
             values. Method takes tuple: (value, flags) and should return
             processed value or raise ClientException if not supported.
+        :param set_flag_handler: async method to call to convert non bytes
+            value to flagged value. Method takes value and must return tuple:
+            (value, flags).
         """
         if not pool_minsize:
             pool_minsize = pool_size
@@ -48,7 +51,8 @@ class Client:
         self._pool = MemcachePool(
             host, port, minsize=pool_minsize, maxsize=pool_size, loop=loop)
 
-        self._value_flag_handler = value_flag_handler
+        self._get_flag_handler = get_flag_handler
+        self._set_flag_handler = set_flag_handler
 
     # key supports ascii sans space and control chars
     # \x21 is !, right after space, and \x7e is -, right before DEL
@@ -121,8 +125,8 @@ class Client:
                 if key in received:
                     raise ClientException('duplicate results from server')
 
-                if flags and self._value_flag_handler:
-                    val = yield from self._value_flag_handler(val, flags)
+                if flags and self._get_flag_handler:
+                    val = yield from self._get_flag_handler(val, flags)
                 elif flags != 0:
                     raise ClientException('received non zero flags')
 
@@ -239,6 +243,10 @@ class Client:
             raise ValidationException('exptime not int', exptime)
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
+
+        if flags == 0 and self._set_flag_handler and \
+                not isinstance(value, bytes):
+            value, flags = self._set_flag_handler(value)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
