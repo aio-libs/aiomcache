@@ -5,14 +5,14 @@ doc:
 	echo "open file://`pwd`/docs/_build/html/index.html"
 
 flake:
-	flake8 aiomcache tests examples
+	python3 -m flake8 aiomcache tests examples
 
 test: flake
-	py.test tests
+	python3 -m pytest tests
 
 
 cov cover coverage: flake
-	py.test --cov=aiomcache --cov-report=html --cov-report=term-missing tests
+	python3 -m pytest --cov=aiomcache --cov-report=html --cov-report=term-missing tests
 	@echo "open file://`pwd`/htmlcov/index.html"
 
 

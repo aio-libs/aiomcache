@@ -7,3 +7,5 @@ pytest-sugar==0.9.1
 python-memcached==1.59
 flake8==3.5.0
 pylibmc==1.5.2
+
+-e .

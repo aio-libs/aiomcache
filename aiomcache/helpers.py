@@ -35,5 +35,4 @@ def pylibmc_set_flag_handler(value):
                PyLibMCFlags.PYLIBMC_FLAG_BOOL.value
 
     # default is pickle
-    return pickle.dumps(value), \
-           PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value
+    return pickle.dumps(value), PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value
