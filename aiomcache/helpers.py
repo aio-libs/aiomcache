@@ -24,6 +24,8 @@ def pylibmc_get_flag_handler(value, flags):
         assert False
 
 
+# see _PylibMC_serialize_native in:
+# https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L1241
 @asyncio.coroutine
 def pylibmc_set_flag_handler(value):
     if isinstance(value, int):
@@ -31,7 +33,7 @@ def pylibmc_set_flag_handler(value):
                PyLibMCFlags.PYLIBMC_FLAG_LONG.value
 
     if isinstance(value, bool):
-        return str(int(value)).encode('utf-8'), \
+        return b'1' if value else b'0', \
                PyLibMCFlags.PYLIBMC_FLAG_BOOL.value
 
     # default is pickle
