@@ -162,7 +162,7 @@ class Client(object):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    def multi_get(self, conn, *keys):
+    def multi_get(self, conn, *keys, default=None):
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -171,7 +171,7 @@ class Client(object):
         and socket errors
         """
         values, _ = yield from self._multi_get(conn, *keys)
-        return tuple(values.get(key) for key in keys)
+        return tuple(values.get(key, default) for key in keys)
 
     @acquire
     def stats(self, conn, args=None):

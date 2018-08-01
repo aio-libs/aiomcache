@@ -88,7 +88,16 @@ def test_multi_get(mcache):
 
     test_value = yield from mcache.multi_get(b'not' + key1, key2)
     assert test_value == (None, value2)
+
+    test_value = yield from mcache.multi_get(b'not' + key1,
+                                             key2,
+                                             default=value1)
+    assert test_value == (value1, value2)
+
     test_value = yield from mcache.multi_get()
+    assert test_value == ()
+
+    test_value = yield from mcache.multi_get(default=value1)
     assert test_value == ()
 
 
