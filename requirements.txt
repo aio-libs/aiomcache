@@ -1,7 +1,7 @@
 docker-py==1.10.6
 docutils==0.14
 pygments==2.2.0
-pytest==3.6.4
+pytest==3.8.1
 pytest-cov==2.5.1
 pytest-sugar==0.9.1
 python-memcached==1.59
