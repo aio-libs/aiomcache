@@ -39,7 +39,7 @@ class Client(object):
     # key supports ascii sans space and control chars
     # \x21 is !, right after space, and \x7e is -, right before DEL
     # also 1 <= len <= 250 as per the spec
-    _valid_key_re = re.compile(b'^[\x21-\x7e]{1,250}$')
+    _valid_key_re = re.compile(b'^[^\x00-\x20\x7f]{1,250}$')
 
     def _validate_key(self, key):
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
