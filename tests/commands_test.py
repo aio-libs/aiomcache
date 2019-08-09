@@ -13,6 +13,12 @@ def test_version(mcache, loop):
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
         fut = asyncio.Future(loop=loop)
+        fut.set_result(b'VERSION 1.0.0 Ubuntu\r\n')
+        patched.return_value = fut
+        yield from mcache.version()
+
+    with mock.patch.object(mcache, '_execute_simple_command') as patched:
+        fut = asyncio.Future(loop=loop)
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):

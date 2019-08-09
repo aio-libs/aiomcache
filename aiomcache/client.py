@@ -404,12 +404,11 @@ class Client(object):
         """
 
         command = b'version\r\n'
-        response = yield from self._execute_simple_command(
-            conn, command)
+        response = yield from self._execute_simple_command(conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
-        version, number = response.split()
-        return number
+        version, *number = response.split()
+        return b''.join(number)
 
     @acquire
     def flush_all(self, conn):
