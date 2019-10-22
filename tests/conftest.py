@@ -283,7 +283,7 @@ def mcache_server_docker(unused_port, docker, session_id):
 @pytest.fixture(scope='session')
 async def mcache_server(unused_port, docker, session_id):
     if not mcache_server_option:
-        ret = await mcache_server_docker(unused_port, docker, session_id)
+        ret = mcache_server_docker(unused_port, docker, session_id)
     else:
         mcache_params = mcache_server_option.split(':')
         ret = mcache_server_actual(*mcache_params)
@@ -291,7 +291,7 @@ async def mcache_server(unused_port, docker, session_id):
 
 
 @pytest.fixture
-def mcache_params(mcache_server):
+async def mcache_params(mcache_server):
     return dict(**mcache_server['mcache_params'])
 
 
