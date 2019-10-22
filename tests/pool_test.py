@@ -74,8 +74,7 @@ async def test_acquire_limit_maxsize(mcache_params,
     assert pool.size() == 1
     pool.release(_conn)
 
-    @asyncio.coroutine
-    def acquire_wait_release():
+    async def acquire_wait_release():
         conn = await pool.acquire()
         assert conn is _conn
         await asyncio.sleep(0.01, loop=loop)
