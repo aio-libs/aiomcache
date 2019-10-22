@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import contextlib
 import gc
 import logging
 import pytest
@@ -244,6 +245,7 @@ def mcache_server_actual(host, port='11211'):
     return container
 
 
+@contextlib.contextmanager
 def mcache_server_docker(unused_port, docker, session_id):
     docker.pull('memcached:alpine')
     container = docker.create_container(
@@ -281,17 +283,17 @@ def mcache_server_docker(unused_port, docker, session_id):
 
 
 @pytest.fixture(scope='session')
-async def mcache_server(unused_port, docker, session_id):
+def mcache_server(unused_port, docker, session_id):
     if not mcache_server_option:
-        ret = mcache_server_docker(unused_port, docker, session_id)
+        with mcache_server_docker(unused_port, docker, session_id) as ret:
+            return ret
     else:
         mcache_params = mcache_server_option.split(':')
-        ret = mcache_server_actual(*mcache_params)
-    return ret
+        return mcache_server_actual(*mcache_params)
 
 
 @pytest.fixture
-async def mcache_params(mcache_server):
+def mcache_params(mcache_server):
     return dict(**mcache_server['mcache_params'])
 
 
