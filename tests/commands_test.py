@@ -5,22 +5,22 @@ from unittest import mock
 from aiomcache.exceptions import ClientException, ValidationException
 
 
-@pytest.mark.run_loop
-async def test_version(mcache, loop):
+@pytest.mark.asyncio
+async def test_version(mcache):
     version = await mcache.version()
     stats = await mcache.stats()
     assert version == stats[b'version']
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future(loop=loop)
+        fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
             await mcache.version()
 
 
-@pytest.mark.run_loop
-async def test_flush_all(mcache, loop):
+@pytest.mark.asyncio
+async def test_flush_all(mcache):
     key, value = b'key:flush_all', b'flush_all_value'
     await mcache.set(key, value)
     # make sure value exists
@@ -33,15 +33,15 @@ async def test_flush_all(mcache, loop):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future(loop=loop)
+        fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
             await mcache.flush_all()
 
 
-@pytest.mark.run_loop
-async def test_set_get(mcache, loop):
+@pytest.mark.asyncio
+async def test_set_get(mcache):
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
     test_value = await mcache.get(key)
@@ -52,15 +52,15 @@ async def test_set_get(mcache, loop):
     assert test_value == value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future(loop=loop)
+        fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
             await mcache.set(key, value)
 
 
-@pytest.mark.run_loop
-async def test_gets(mcache, loop):
+@pytest.mark.asyncio
+async def test_gets(mcache):
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
 
@@ -77,7 +77,7 @@ async def test_gets(mcache, loop):
     assert cas is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_multi_get(mcache):
     key1, value1 = b'key:multi_get:1', b'1'
     key2, value2 = b'key:multi_get:2', b'2'
@@ -92,7 +92,7 @@ async def test_multi_get(mcache):
     assert test_value == ()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_multi_get_doubling_keys(mcache):
     key, value = b'key:multi_get:3', b'1'
     await mcache.set(key, value)
@@ -101,20 +101,20 @@ async def test_multi_get_doubling_keys(mcache):
         await mcache.multi_get(key, key)
 
 
-@pytest.mark.run_loop
-async def test_set_expire(mcache, loop):
+@pytest.mark.asyncio
+async def test_set_expire(mcache):
     key, value = b'key:set', b'1'
     await mcache.set(key, value, exptime=1)
     test_value = await mcache.get(key)
     assert test_value == value
 
-    await asyncio.sleep(1, loop=loop)
+    await asyncio.sleep(1)
 
     test_value = await mcache.get(key)
     assert test_value is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_set_errors(mcache):
     key, value = b'key:set', b'1'
     await mcache.set(key, value, exptime=1)
@@ -126,8 +126,8 @@ async def test_set_errors(mcache):
         await mcache.set(key, value, exptime=3.14)
 
 
-@pytest.mark.run_loop
-async def test_gets_cas(mcache, loop):
+@pytest.mark.asyncio
+async def test_gets_cas(mcache):
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
 
@@ -140,14 +140,14 @@ async def test_gets_cas(mcache, loop):
     assert stored is False
 
 
-@pytest.mark.run_loop
-async def test_cas_missing(mcache, loop):
+@pytest.mark.asyncio
+async def test_cas_missing(mcache):
     key, value = b'key:set', b'1'
     stored = await mcache.cas(key, value, 123)
     assert stored is False
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_add(mcache):
     key, value = b'key:add', b'1'
     await mcache.set(key, value)
@@ -162,7 +162,7 @@ async def test_add(mcache):
     assert test_value == b'2'
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_replace(mcache):
     key, value = b'key:replace', b'1'
     await mcache.set(key, value)
@@ -180,7 +180,7 @@ async def test_replace(mcache):
     assert test_value is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_append(mcache):
     key, value = b'key:append', b'1'
     await mcache.set(key, value)
@@ -199,7 +199,7 @@ async def test_append(mcache):
     assert test_value is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_prepend(mcache):
     key, value = b'key:prepend', b'1'
     await mcache.set(key, value)
@@ -218,8 +218,8 @@ async def test_prepend(mcache):
     assert test_value is None
 
 
-@pytest.mark.run_loop
-async def test_delete(mcache, loop):
+@pytest.mark.asyncio
+async def test_delete(mcache):
     key, value = b'key:delete', b'value'
     await mcache.set(key, value)
 
@@ -234,7 +234,7 @@ async def test_delete(mcache, loop):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future(loop=loop)
+        fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
 
@@ -242,13 +242,13 @@ async def test_delete(mcache, loop):
             await mcache.delete(key)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_delete_key_not_exists(mcache):
     is_deleted = await mcache.delete(b'not:key')
     assert not is_deleted
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_incr(mcache):
     key, value = b'key:incr:1', b'1'
     await mcache.set(key, value)
@@ -261,7 +261,7 @@ async def test_incr(mcache):
     assert test_value == b'3'
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_incr_errors(mcache):
     key, value = b'key:incr:2', b'string'
     await mcache.set(key, value)
@@ -273,7 +273,7 @@ async def test_incr_errors(mcache):
         await mcache.incr(key, 3.14)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_decr(mcache):
     key, value = b'key:decr:1', b'17'
     await mcache.set(key, value)
@@ -288,7 +288,7 @@ async def test_decr(mcache):
     assert test_value == 0
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_decr_errors(mcache):
     key, value = b'key:decr:2', b'string'
     await mcache.set(key, value)
@@ -300,14 +300,14 @@ async def test_decr_errors(mcache):
         await mcache.decr(key, 3.14)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_stats(mcache):
     stats = await mcache.stats()
     assert b'pid' in stats
 
 
-@pytest.mark.run_loop
-async def test_touch(mcache, loop):
+@pytest.mark.asyncio
+async def test_touch(mcache):
     key, value = b'key:touch:1', b'17'
     await mcache.set(key, value)
 
@@ -317,7 +317,7 @@ async def test_touch(mcache, loop):
     test_value = await mcache.get(key)
     assert test_value == value
 
-    await asyncio.sleep(1, loop=loop)
+    await asyncio.sleep(1)
 
     test_value = await mcache.get(key)
     assert test_value is None
@@ -326,7 +326,7 @@ async def test_touch(mcache, loop):
     assert not test_value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future(loop=loop)
+        fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
 
@@ -334,7 +334,7 @@ async def test_touch(mcache, loop):
             await mcache.touch(b'not:' + key, 1)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_close(mcache):
     await mcache.close()
     assert mcache._pool.size() == 0
