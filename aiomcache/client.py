@@ -1,4 +1,3 @@
-import asyncio
 import functools
 import re
 
@@ -200,7 +199,7 @@ class Client(object):
         return result
 
     async def _storage_command(self, conn, command, key, value,
-                         flags=0, exptime=0, cas=None):
+                               flags=0, exptime=0, cas=None):
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)

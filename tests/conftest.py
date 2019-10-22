@@ -289,6 +289,7 @@ async def mcache_server(unused_port, docker, session_id):
         ret = mcache_server_actual(*mcache_params)
     return ret
 
+
 @pytest.fixture
 def mcache_params(mcache_server):
     return dict(**mcache_server['mcache_params'])
