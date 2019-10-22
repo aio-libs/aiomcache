@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+0.7.0 (XXXX-XX-XX)
+------------------
+
+- Drop python 3.4 support
+- Run CI tests on Python 3.7
+
 0.6.0 (2017-12-03)
 ------------------
 
