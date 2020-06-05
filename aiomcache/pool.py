@@ -1,4 +1,5 @@
 import asyncio
+import os.path
 from collections import namedtuple
 
 __all__ = ['MemcachePool']
@@ -9,7 +10,7 @@ _connection = namedtuple('connection', ['reader', 'writer'])
 
 class MemcachePool:
 
-    def __init__(self, host, port, *, minsize, maxsize, loop=None):
+    def __init__(self, host, port, *, minsize, maxsize, loop=None, unix=None):
         loop = loop if loop is not None else asyncio.get_event_loop()
         self._host = host
         self._port = port
@@ -18,6 +19,7 @@ class MemcachePool:
         self._loop = loop
         self._pool = asyncio.Queue(loop=loop)
         self._in_use = set()
+        self._unix = unix
 
     @asyncio.coroutine
     def clear(self):
@@ -69,8 +71,11 @@ class MemcachePool:
     @asyncio.coroutine
     def _create_new_conn(self):
         if self.size() < self._maxsize:
-            reader, writer = yield from asyncio.open_connection(
-                self._host, self._port, loop=self._loop)
+            if isinstance(self._unix, str) and os.path.exists(self._unix):
+                reader, writer = yield from asyncio.open_unix_connection(path=self._unix, loop=self._loop)
+            else:
+                reader, writer = yield from asyncio.open_connection(self._host, self._port, loop=self._loop)
+
             if self.size() < self._maxsize:
                 return _connection(reader, writer)
             else:
