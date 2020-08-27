@@ -121,4 +121,4 @@ async def mcache(mcache_params):
     print("Connect to {}".format(mcache_params))
     client = aiomcache.Client(**mcache_params)
     yield client
-    client.close()
+    await client.close()

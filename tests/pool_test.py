@@ -48,7 +48,7 @@ async def test_pool_clear(mcache_params):
 
 @pytest.mark.asyncio
 async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
-        mcache_params,
+    mcache_params,
 ):
     pool = MemcachePool(minsize=1, maxsize=5, **mcache_params)
     assert pool.size() == 0
