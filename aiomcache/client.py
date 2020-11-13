@@ -101,7 +101,7 @@ class Client(object):
                 if flags != 0:
                     raise ClientException('received non zero flags')
 
-                val = await conn.reader.readexactly(length+2)[:-2]
+                val = (await conn.reader.readexactly(length+2))[:-2]
                 if key in received:
                     raise ClientException('duplicate results from server')
 
