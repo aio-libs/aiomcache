@@ -10,7 +10,7 @@ import memcache
 import aiomcache
 
 
-mcache_server_option = 'localhost'
+mcache_server_option = None
 
 
 def pytest_addoption(parser):
@@ -29,7 +29,7 @@ def unused_port():
 
 def pytest_runtest_setup(item):
     global mcache_server_option
-    mcache_server_option = item.config.getoption('--memcached', 'localhost')
+    mcache_server_option = item.config.getoption('--memcached')
 
 
 def pytest_ignore_collect(path, config):
@@ -73,6 +73,7 @@ def mcache_server_docker(unused_port, docker, session_id):
         container.start()
         container.reload()
         net_settings = container.attrs['NetworkSettings']
+        print(net_settings)
         host = net_settings['IPAddress']
         port = int(net_settings['Ports']['11211/tcp'][0]['HostPort'])
         mcache_params = dict(host=host, port=port)

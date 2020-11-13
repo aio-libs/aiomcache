@@ -6,7 +6,7 @@ python:
   - "3.8"
 
 services:
-  - memcached
+  - docker
 
 install:
   - pip install -U setuptools
