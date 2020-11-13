@@ -103,12 +103,7 @@ def mcache_server_docker(unused_port, docker, session_id):
 
 @pytest.fixture(scope='session')
 def mcache_server(unused_port, docker, session_id):
-    if not mcache_server_option:
-        with mcache_server_docker(unused_port, docker, session_id) as ret:
-            return ret
-    else:
-        mcache_params = mcache_server_option.split(':')
-        return mcache_server_actual(*mcache_params)
+    return mcache_server_actual('localhost')
 
 
 @pytest.fixture
