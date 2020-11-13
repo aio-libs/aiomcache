@@ -401,7 +401,7 @@ class Client(object):
             conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
-        version, number = response.split()
+        version, number = response.rstrip(b'\r\n').split(maxsplit=1)
         return number
 
     @acquire
