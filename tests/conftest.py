@@ -10,7 +10,7 @@ import memcache
 import aiomcache
 
 
-mcache_server_option = None
+mcache_server_option = 'localhost'
 
 
 def pytest_addoption(parser):
