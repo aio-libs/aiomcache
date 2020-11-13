@@ -10,7 +10,7 @@ import memcache
 import aiomcache
 
 
-mcache_server_option = 'localhost'
+mcache_server_option = None
 
 
 def pytest_addoption(parser):
@@ -29,7 +29,7 @@ def unused_port():
 
 def pytest_runtest_setup(item):
     global mcache_server_option
-    mcache_server_option = item.config.getoption('--memcached')
+    mcache_server_option = item.config.getoption('--memcached', 'localhost')
 
 
 def pytest_ignore_collect(path, config):
