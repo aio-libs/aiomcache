@@ -1,4 +1,3 @@
-sudo: required
 language: python
 python:
   - "3.5"
@@ -7,7 +6,7 @@ python:
   - "3.8"
 
 services:
-  - docker
+  - memcached
 
 install:
   - pip install -U setuptools

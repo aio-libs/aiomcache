@@ -10,7 +10,7 @@ import memcache
 import aiomcache
 
 
-mcache_server_option = None
+mcache_server_option = 'localhost'
 
 
 def pytest_addoption(parser):
@@ -49,7 +49,7 @@ def docker():
     return docker_mod.from_env()
 
 
-def mcache_server_actual(host, port='11211'):
+def mcache_server_actual(host, port=11211):
     port = int(port)
     container = {
         'host': host,
