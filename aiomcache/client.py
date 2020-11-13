@@ -28,11 +28,11 @@ def acquire(func):
 class Client(object):
 
     def __init__(self, host, port=11211, *,
-                 pool_size=2, pool_minsize=None, loop=None):
+                 pool_size=2, pool_minsize=None):
         if not pool_minsize:
             pool_minsize = pool_size
         self._pool = MemcachePool(
-            host, port, minsize=pool_minsize, maxsize=pool_size, loop=loop)
+            host, port, minsize=pool_minsize, maxsize=pool_size)
 
     # key supports ascii sans space and control chars
     # \x21 is !, right after space, and \x7e is -, right before DEL
