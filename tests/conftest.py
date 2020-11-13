@@ -74,7 +74,7 @@ def mcache_server_docker(unused_port, docker, session_id):
         container.reload()
         net_settings = container.attrs['NetworkSettings']
         print(net_settings)
-        host = net_settings['IPAddress']
+        host = net_settings['Ports']['11211/tcp'][0]['HostIp']
         port = int(net_settings['Ports']['11211/tcp'][0]['HostPort'])
         mcache_params = dict(host=host, port=port)
         delay = 0.001
