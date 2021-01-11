@@ -16,7 +16,7 @@ class MemcachePool:
         self._minsize = minsize
         self._maxsize = maxsize
         self._loop = loop
-        self._pool = asyncio.Queue(loop=loop)
+        self._pool = asyncio.Queue()
         self._in_use = set()
 
     @asyncio.coroutine
