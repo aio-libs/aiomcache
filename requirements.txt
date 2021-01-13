@@ -1,6 +1,6 @@
 docker-py==1.10.6
 docutils==0.16
-pygments==2.7.3
+pygments==2.7.4
 pytest==6.2.1
 pytest-cov==2.8.1
 pytest-sugar==0.9.4
