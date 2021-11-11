@@ -1,5 +1,5 @@
 docker-py==1.10.6
-docutils==0.17.1
+docutils==0.18
 pygments==2.9.0
 pytest==6.2.4
 pytest-cov==2.8.1
