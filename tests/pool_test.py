@@ -25,7 +25,7 @@ async def test_pool_acquire_release(mcache_params):
 async def test_pool_acquire_release2(mcache_params):
     pool = MemcachePool(minsize=1, maxsize=5, **mcache_params)
     reader, writer = await asyncio.open_connection(
-        mcache_params['host'], mcache_params['port'])
+        mcache_params["host"], mcache_params["port"])
     # put dead connection to the pool
     writer.close()
     reader.feed_eof()

@@ -278,7 +278,7 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return await self._storage_command(
-            conn, b'add', key, value, flags, exptime)
+            conn, b"add", key, value, flags, exptime)
 
     @acquire
     async def replace(self, conn, key, value, exptime=0):
@@ -293,7 +293,7 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return await self._storage_command(
-            conn, b'replace', key, value, flags, exptime)
+            conn, b"replace", key, value, flags, exptime)
 
     @acquire
     async def append(self, conn, key, value, exptime=0):
@@ -307,7 +307,7 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return await self._storage_command(
-            conn, b'append', key, value, flags, exptime)
+            conn, b"append", key, value, flags, exptime)
 
     @acquire
     async def prepend(self, conn, key, value, exptime=0):
@@ -321,7 +321,7 @@ class Client(object):
         """
         flags = 0  # TODO: fix when exception removed
         return await self._storage_command(
-            conn, b'prepend', key, value, flags, exptime)
+            conn, b"prepend", key, value, flags, exptime)
 
     async def _incr_decr(self, conn, command, key, delta):
         delta_byte = str(delta).encode('utf-8')
@@ -401,7 +401,7 @@ class Client(object):
             conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
-        version, number = response.rstrip(b'\r\n').split(maxsplit=1)
+        version, number = response.rstrip(b"\r\n").split(maxsplit=1)
         return number
 
     @acquire

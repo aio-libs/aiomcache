@@ -14,7 +14,7 @@ async def test_version(mcache):
 
     with mock.patch.object(
             mcache,
-            '_execute_simple_command',
+            "_execute_simple_command",
             new_callable=MagicMock) as patched:
         fut = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
@@ -50,9 +50,9 @@ async def test_set_get(mcache):
     await mcache.set(key, value)
     test_value = await mcache.get(key)
     assert test_value == value
-    test_value = await mcache.get(b'not:' + key)
+    test_value = await mcache.get(b"not:" + key)
     assert test_value is None
-    test_value = await mcache.get(b'not:' + key, default=value)
+    test_value = await mcache.get(b"not:" + key, default=value)
     assert test_value == value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
@@ -72,11 +72,11 @@ async def test_gets(mcache):
     assert test_value == value
     assert isinstance(cas, int)
 
-    test_value, cas = await mcache.gets(b'not:' + key)
+    test_value, cas = await mcache.gets(b"not:" + key)
     assert test_value is None
     assert cas is None
 
-    test_value, cas = await mcache.gets(b'not:' + key, default=value)
+    test_value, cas = await mcache.gets(b"not:" + key, default=value)
     assert test_value == value
     assert cas is None
 
@@ -156,13 +156,13 @@ async def test_add(mcache):
     key, value = b'key:add', b'1'
     await mcache.set(key, value)
 
-    test_value = await mcache.add(key, b'2')
+    test_value = await mcache.add(key, b"2")
     assert not test_value
 
-    test_value = await mcache.add(b'not:' + key, b'2')
+    test_value = await mcache.add(b"not:" + key, b"2")
     assert test_value
 
-    test_value = await mcache.get(b'not:' + key)
+    test_value = await mcache.get(b"not:" + key)
     assert test_value == b'2'
 
 
@@ -171,16 +171,16 @@ async def test_replace(mcache):
     key, value = b'key:replace', b'1'
     await mcache.set(key, value)
 
-    test_value = await mcache.replace(key, b'2')
+    test_value = await mcache.replace(key, b"2")
     assert test_value
     # make sure value exists
     test_value = await mcache.get(key)
     assert test_value == b'2'
 
-    test_value = await mcache.replace(b'not:' + key, b'3')
+    test_value = await mcache.replace(b"not:" + key, b"3")
     assert not test_value
     # make sure value exists
-    test_value = await mcache.get(b'not:' + key)
+    test_value = await mcache.get(b"not:" + key)
     assert test_value is None
 
 
@@ -189,17 +189,17 @@ async def test_append(mcache):
     key, value = b'key:append', b'1'
     await mcache.set(key, value)
 
-    test_value = await mcache.append(key, b'2')
+    test_value = await mcache.append(key, b"2")
     assert test_value
 
     # make sure value exists
     test_value = await mcache.get(key)
     assert test_value == b'12'
 
-    test_value = await mcache.append(b'not:' + key, b'3')
+    test_value = await mcache.append(b"not:" + key, b"3")
     assert not test_value
     # make sure value exists
-    test_value = await mcache.get(b'not:' + key)
+    test_value = await mcache.get(b"not:" + key)
     assert test_value is None
 
 
@@ -208,17 +208,17 @@ async def test_prepend(mcache):
     key, value = b'key:prepend', b'1'
     await mcache.set(key, value)
 
-    test_value = await mcache.prepend(key, b'2')
+    test_value = await mcache.prepend(key, b"2")
     assert test_value
 
     # make sure value exists
     test_value = await mcache.get(key)
     assert test_value == b'21'
 
-    test_value = await mcache.prepend(b'not:' + key, b'3')
+    test_value = await mcache.prepend(b"not:" + key, b'3')
     assert not test_value
     # make sure value exists
-    test_value = await mcache.get(b'not:' + key)
+    test_value = await mcache.get(b"not:" + key)
     assert test_value is None
 
 
@@ -248,7 +248,7 @@ async def test_delete(mcache):
 
 @pytest.mark.asyncio
 async def test_delete_key_not_exists(mcache):
-    is_deleted = await mcache.delete(b'not:key')
+    is_deleted = await mcache.delete(b"not:key")
     assert not is_deleted
 
 
@@ -326,7 +326,7 @@ async def test_touch(mcache):
     test_value = await mcache.get(key)
     assert test_value is None
 
-    test_value = await mcache.touch(b'not:' + key, 1)
+    test_value = await mcache.touch(b"not:" + key, 1)
     assert not test_value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
@@ -335,7 +335,7 @@ async def test_touch(mcache):
         patched.return_value = fut
 
         with pytest.raises(ClientException):
-            await mcache.touch(b'not:' + key, 1)
+            await mcache.touch(b"not:" + key, 1)
 
 
 @pytest.mark.asyncio

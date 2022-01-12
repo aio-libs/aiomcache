@@ -10,7 +10,7 @@ import memcache
 import aiomcache
 
 
-mcache_server_option = 'localhost'
+mcache_server_option = "localhost"
 
 
 def pytest_addoption(parser):
@@ -29,7 +29,7 @@ def unused_port():
 
 def pytest_runtest_setup(item):
     global mcache_server_option
-    mcache_server_option = item.config.getoption('--memcached', 'localhost')
+    mcache_server_option = item.config.getoption("--memcached", "localhost")
 
 
 def pytest_ignore_collect(path, config):
@@ -61,23 +61,21 @@ def mcache_server_actual(host, port=11211):
 
 @contextlib.contextmanager
 def mcache_server_docker(unused_port, docker, session_id):
-    docker.images.pull('memcached:alpine')
+    docker.images.pull("memcached:alpine")
     container = docker.containers.run(
         image='memcached:alpine',
         name='memcached-test-server-{}'.format(session_id),
-        ports={'11211/tcp': None},
+        ports={"11211/tcp": None},
         detach=True,
     )
     try:
-        print("Run memcached server")
         container.start()
         container.reload()
-        net_settings = container.attrs['NetworkSettings']
-        host = net_settings['IPAddress']
-        port = int(net_settings['Ports']['11211/tcp'][0]['HostPort'])
+        net_settings = container.attrs["NetworkSettings"]
+        host = net_settings["IPAddress"]
+        port = int(net_settings["Ports"]["11211/tcp"][0]["HostPort"])
         mcache_params = dict(host=host, port=port)
         delay = 0.001
-        print("Ping memcached server on {}:{}".format(host, port))
         for i in range(10):
             try:
                 conn = memcache.Client(
@@ -89,12 +87,11 @@ def mcache_server_docker(unused_port, docker, session_id):
                 delay *= 2
         else:
             pytest.fail("Cannot start memcached")
-        ret = {'Id': container.id}
-        ret['host'] = host
-        ret['port'] = port
-        ret['mcache_params'] = mcache_params
+        ret = {"Id": container.id}
+        ret["host"] = host
+        ret["port"] = port
+        ret["mcache_params"] = mcache_params
         time.sleep(0.1)
-        print("Memcached config: {}".format(ret))
         yield ret
     finally:
         container.kill()
@@ -103,7 +100,7 @@ def mcache_server_docker(unused_port, docker, session_id):
 
 @pytest.fixture(scope='session')
 def mcache_server(unused_port, docker, session_id):
-    return mcache_server_actual('localhost')
+    return mcache_server_actual("localhost")
 
 
 @pytest.fixture
@@ -113,7 +110,6 @@ def mcache_params(mcache_server):
 
 @pytest.fixture
 async def mcache(mcache_params):
-    print("Connect to {}".format(mcache_params))
     client = aiomcache.Client(**mcache_params)
     yield client
     await client.close()
