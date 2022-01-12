@@ -3,9 +3,6 @@ memcached client for asyncio
 
 asyncio (PEP 3156) library to work with memcached.
 
-.. image:: https://travis-ci.org/aio-libs/aiomcache.svg?branch=master
-   :target: https://travis-ci.org/aio-libs/aiomcache
-
 
 Getting started
 ---------------
@@ -27,10 +24,3 @@ The API looks very similar to the other memcache clients:
         await mc.delete(b"another_key")
 
     asyncio.run(hello_aiomcache())
-
-
-Requirements
-------------
-
-- Python >= 3.3
-- asyncio https://pypi.python.org/pypi/asyncio/

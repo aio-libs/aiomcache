@@ -14,14 +14,6 @@ with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
         raise RuntimeError('Unable to determine version.')
 
 
-if sys.version_info >= (3, 4):
-    install_requires = []
-else:
-    install_requires = ['asyncio']
-
-tests_require = install_requires + ['nose']
-
-
 def read(f):
     return open(os.path.join(os.path.dirname(__file__), f)).read().strip()
 
@@ -34,9 +26,10 @@ setup(name='aiomcache',
           'License :: OSI Approved :: BSD License',
           'Intended Audience :: Developers',
           'Programming Language :: Python',
-          'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
           'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
+          'Programming Language :: Python :: 3.10',
           'Operating System :: POSIX',
           'Operating System :: MacOS :: MacOS X',
           'Operating System :: Microsoft :: Windows',
@@ -51,8 +44,8 @@ setup(name='aiomcache',
       url='https://github.com/aio-libs/aiomcache/',
       license='BSD',
       packages=find_packages(),
-      python_requires='>=3.4.0',
-      install_requires=install_requires,
-      tests_require=tests_require,
+      python_requires='>=3.7',
+      install_requires=(),
+      tests_require=("nose",),
       test_suite='nose.collector',
       include_package_data=True)

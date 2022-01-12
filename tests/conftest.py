@@ -1,7 +1,6 @@
 import contextlib
 import pytest
 import socket
-import sys
 import time
 import uuid
 import docker as docker_mod
@@ -30,12 +29,6 @@ def unused_port():
 def pytest_runtest_setup(item):
     global mcache_server_option
     mcache_server_option = item.config.getoption("--memcached", "localhost")
-
-
-def pytest_ignore_collect(path, config):
-    if 'test_py35' in str(path):
-        if sys.version_info < (3, 5, 0):
-            return True
 
 
 @pytest.fixture(scope='session')
