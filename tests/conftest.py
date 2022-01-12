@@ -32,12 +32,6 @@ def pytest_runtest_setup(item):
     mcache_server_option = item.config.getoption("--memcached", "localhost")
 
 
-def pytest_ignore_collect(path, config):
-    if 'test_py35' in str(path):
-        if sys.version_info < (3, 5, 0):
-            return True
-
-
 @pytest.fixture(scope='session')
 def session_id():
     '''Unique session identifier, random string.'''
