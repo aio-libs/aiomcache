@@ -2,8 +2,8 @@ import contextlib
 import socket
 import time
 import uuid
-import docker as docker_mod
 
+import docker as docker_mod
 import memcache
 import pytest
 
