@@ -3,8 +3,8 @@ import re
 from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
 
 from . import constants as const
-from .pool import Connection, MemcachePool
 from .exceptions import ClientException, ValidationException
+from .pool import Connection, MemcachePool
 
 __all__ = ['Client']
 
@@ -127,7 +127,7 @@ class Client(object):
         :return: True if case values was deleted or False to indicate
         that the item with this key was not found.
         """
-        assert self._validate_key(key)
+        self._validate_key(key)
 
         command = b'delete ' + key + b'\r\n'
         response = await self._execute_simple_command(conn, command)
@@ -137,11 +137,17 @@ class Client(object):
         return response == const.DELETED
 
     @overload
-    async def get(self, conn: Connection, key: bytes) -> Optional[bytes]: ...
+    async def get(self, conn: Connection, key: bytes) -> Optional[bytes]:
+        ...
+
     @overload
-    async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes: ...
+    async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes:
+        ...
+
     @acquire
-    async def get(self, conn: Connection, key: bytes, default: Optional[bytes] = None) -> Optional[bytes]:
+    async def get(
+        self, conn: Connection, key: bytes, default: Optional[bytes] = None
+    ) -> Optional[bytes]:
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -152,7 +158,9 @@ class Client(object):
         return values.get(key, default)
 
     @acquire
-    async def gets(self, conn: Connection, key: bytes, default: Optional[bytes] = None) -> Tuple[Optional[bytes], Optional[int]]:
+    async def gets(
+        self, conn: Connection, key: bytes, default: Optional[bytes] = None
+    ) -> Tuple[Optional[bytes], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -175,7 +183,9 @@ class Client(object):
         return tuple(values.get(key) for key in keys)
 
     @acquire
-    async def stats(self, conn: Connection, args: Optional[bytes] = None) -> Dict[bytes, Optional[bytes]]:
+    async def stats(
+        self, conn: Connection, args: Optional[bytes] = None
+    ) -> Dict[bytes, Optional[bytes]]:
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
         # resp - STAT <name> <value>\r\n (one per result)
@@ -218,7 +228,7 @@ class Client(object):
         #   SERVER_ERROR object too large for cache\r\n
         # however custom-compiled memcached can have different limit
         # so, we'll let the server decide what's too much
-        assert self._validate_key(key)
+        self._validate_key(key)
 
         if not isinstance(exptime, int):
             raise ValidationException('exptime not int', exptime)
@@ -323,7 +333,9 @@ class Client(object):
         flags = 0  # TODO: fix when exception removed
         return await self._storage_command(conn, b"prepend", key, value, flags, exptime)
 
-    async def _incr_decr(self, conn: Connection, command: bytes, key: bytes, delta: int) -> Optional[int]:
+    async def _incr_decr(
+        self, conn: Connection, command: bytes, key: bytes, delta: int
+    ) -> Optional[int]:
         delta_byte = str(delta).encode('utf-8')
         cmd = b' '.join([command, key, delta_byte]) + b'\r\n'
         resp = await self._execute_simple_command(conn, cmd)
@@ -346,7 +358,7 @@ class Client(object):
         after the increment or ``None`` to indicate the item with
         this value was not found
         """
-        assert self._validate_key(key)
+        self._validate_key(key)
         return await self._incr_decr(conn, b"incr", key, increment)
 
     @acquire
@@ -363,7 +375,7 @@ class Client(object):
         after the increment or ``None`` to indicate the item with
         this value was not found
         """
-        assert self._validate_key(key)
+        self._validate_key(key)
         return await self._incr_decr(conn, b"decr", key, decrement)
 
     @acquire
@@ -376,7 +388,7 @@ class Client(object):
         expiration time.
         :return: ``bool``, True in case of success.
         """
-        assert self._validate_key(key)
+        self._validate_key(key)
 
         _cmd = b' '.join([b'touch', key, str(exptime).encode('utf-8')])
         cmd = _cmd + b'\r\n'

@@ -1,7 +1,8 @@
 import asyncio
-import pytest
 from unittest import mock
 from unittest.mock import MagicMock
+
+import pytest
 
 from aiomcache.exceptions import ClientException, ValidationException
 

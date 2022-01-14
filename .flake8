@@ -20,4 +20,5 @@ import-order-style = pycharm
 inline-quotes = "
 
 # flake8-requirements
+known-modules = docker-py:[docker],python-memcached:[memcache]
 requirements-file = requirements.txt

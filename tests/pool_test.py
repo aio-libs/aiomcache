@@ -1,8 +1,10 @@
-import random
 import asyncio
+import random
+
 import pytest
-from aiomcache.pool import Connection, MemcachePool
+
 from aiomcache.client import acquire
+from aiomcache.pool import Connection, MemcachePool
 
 
 @pytest.mark.asyncio
@@ -103,7 +105,7 @@ async def test_acquire_task_cancellation(
         @acquire
         async def acquire_wait_release(self, conn):
             assert self._pool.size() <= pool_size
-            await asyncio.sleep(random.uniform(0.01, 0.02))
+            await asyncio.sleep(random.uniform(0.01, 0.02))  # noqa: S311
             return "foo"
 
     pool_size = 4
@@ -111,7 +113,7 @@ async def test_acquire_task_cancellation(
     tasks = [
         asyncio.wait_for(
             client.acquire_wait_release(),
-            random.uniform(1, 2)) for x in range(1000)
+            random.uniform(1, 2)) for x in range(1000)  # noqa: S311
     ]
     results = await asyncio.gather(
         *tasks, return_exceptions=True)

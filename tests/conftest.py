@@ -1,11 +1,12 @@
 import contextlib
-import pytest
 import socket
 import time
 import uuid
 import docker as docker_mod
 
 import memcache
+import pytest
+
 import aiomcache
 
 
@@ -69,10 +70,9 @@ def mcache_server_docker(unused_port, docker, session_id):
         port = int(net_settings["Ports"]["11211/tcp"][0]["HostPort"])
         mcache_params = dict(host=host, port=port)
         delay = 0.001
-        for i in range(10):
+        for _i in range(10):
             try:
-                conn = memcache.Client(
-                    ['{host}:{port}'.format_map(mcache_params)])
+                conn = memcache.Client(["{host}:{port}".format_map(mcache_params)])
                 conn.get_stats()
                 break
             except Exception:

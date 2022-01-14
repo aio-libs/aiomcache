@@ -1,8 +1,8 @@
 import codecs
 import os
 import re
-import sys
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 
 with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
