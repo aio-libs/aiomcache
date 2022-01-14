@@ -3,6 +3,45 @@ name: CI
 on: [pull_request, push]
 
 jobs:
+  lint:
+    name: Linter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+    - name: Cache PyPI
+      uses: actions/cache@v2
+      with:
+        key: pip-lint-${{ hashFiles('requirements-dev.txt') }}
+        path: ~/.cache/pip
+        restore-keys: |
+            pip-lint-
+    - name: Install dependencies
+      uses: py-actions/py-dependency-install@v2
+      with:
+        path: requirements.txt
+    - name: Install itself
+      run: |
+        pip install .
+    - name: Mypy
+      run: |
+        mypy
+    - name: Flake8
+      run: |
+        flake8
+    - name: Prepare twine checker
+      run: |
+        pip install -U twine wheel
+        python setup.py sdist bdist_wheel
+    - name: Run twine checker
+      run: |
+        twine check dist/*
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -27,9 +66,7 @@ jobs:
     - name: Run memcached service
       uses: jkeys089/actions-memcached@master
     - name: Run tests
-      run: |
-        make cov
-        python setup.py check -rm
+      run: pytest
     - name: Upload coverage
       uses: codecov/codecov-action@v2
       with:
@@ -38,7 +75,7 @@ jobs:
 
   check:  # This job does nothing and is only used for the branch protection
     if: always()
-    needs: [test]
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
     - name: Decide whether the needed jobs succeeded or failed

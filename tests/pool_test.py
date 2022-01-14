@@ -1,8 +1,10 @@
-import random
 import asyncio
+import random
+
 import pytest
-from aiomcache.pool import MemcachePool, _connection
+
 from aiomcache.client import acquire
+from aiomcache.pool import Connection, MemcachePool
 
 
 @pytest.mark.asyncio
@@ -29,7 +31,7 @@ async def test_pool_acquire_release2(mcache_params):
     # put dead connection to the pool
     writer.close()
     reader.feed_eof()
-    conn = _connection(reader, writer)
+    conn = Connection(reader, writer)
     await pool._pool.put(conn)
     conn = await pool.acquire()
     assert isinstance(conn.reader, asyncio.StreamReader)
@@ -55,6 +57,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
 
     # Add a valid connection
     _conn = await pool._create_new_conn()
+    assert _conn is not None
     await pool._pool.put(_conn)
     assert pool.size() == 1
 
@@ -102,7 +105,7 @@ async def test_acquire_task_cancellation(
         @acquire
         async def acquire_wait_release(self, conn):
             assert self._pool.size() <= pool_size
-            await asyncio.sleep(random.uniform(0.01, 0.02))
+            await asyncio.sleep(random.uniform(0.01, 0.02))  # noqa: S311
             return "foo"
 
     pool_size = 4
@@ -110,7 +113,7 @@ async def test_acquire_task_cancellation(
     tasks = [
         asyncio.wait_for(
             client.acquire_wait_release(),
-            random.uniform(1, 2)) for x in range(1000)
+            random.uniform(1, 2)) for x in range(1000)  # noqa: S311
     ]
     results = await asyncio.gather(
         *tasks, return_exceptions=True)
