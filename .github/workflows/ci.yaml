@@ -66,9 +66,7 @@ jobs:
     - name: Run memcached service
       uses: jkeys089/actions-memcached@master
     - name: Run tests
-      run: |
-        make cov
-        python setup.py check -rm
+      run: pytest
     - name: Upload coverage
       uses: codecov/codecov-action@v2
       with:

@@ -4,14 +4,8 @@ doc:
 	cd docs && make html
 	echo "open file://`pwd`/docs/_build/html/index.html"
 
-flake:
-	flake8 aiomcache tests examples
 
-test: flake
-	py.test tests
-
-
-cov cover coverage: flake
+cov cover coverage:
 	py.test --cov=aiomcache --cov-report=html --cov-report=xml --cov-report=term-missing tests
 	@echo "open file://`pwd`/htmlcov/index.html"
 
@@ -29,4 +23,4 @@ clean:
 	rm -rf coverage
 	rm -rf docs/_build
 
-.PHONY: all flake test cov clean
+.PHONY: all cov clean
