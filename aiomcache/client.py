@@ -1,18 +1,21 @@
 import functools
 import re
+from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
 
 from . import constants as const
-from .pool import MemcachePool
+from .pool import Connection, MemcachePool
 from .exceptions import ClientException, ValidationException
-
 
 __all__ = ['Client']
 
+_T = TypeVar("_T")
+_Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
 
-def acquire(func):
+
+def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self, *args, **kwargs):
+    async def wrapper(self: "Client", *args: object, **kwargs: object) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -27,8 +30,8 @@ def acquire(func):
 
 class Client(object):
 
-    def __init__(self, host, port=11211, *,
-                 pool_size=2, pool_minsize=None):
+    def __init__(self, host: str, port: int = 11211, *,
+                 pool_size: int = 2, pool_minsize: Optional[int] = None):
         if not pool_minsize:
             pool_minsize = pool_size
         self._pool = MemcachePool(
@@ -39,7 +42,7 @@ class Client(object):
     # also 1 <= len <= 250 as per the spec
     _valid_key_re = re.compile(b'^[\x21-\x7e]{1,250}$')
 
-    def _validate_key(self, key):
+    def _validate_key(self, key: bytes) -> bytes:
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
             raise ValidationException('key must be bytes', key)
 
@@ -55,7 +58,7 @@ class Client(object):
 
         return key
 
-    async def _execute_simple_command(self, conn, raw_command):
+    async def _execute_simple_command(self, conn: Connection, raw_command: bytes) -> bytes:
         response, line = bytearray(), b''
 
         conn.writer.write(raw_command)
@@ -66,11 +69,11 @@ class Client(object):
             response.extend(line)
         return response[:-2]
 
-    async def close(self):
+    async def close(self) -> None:
         """Closes the sockets if its open."""
         await self._pool.clear()
 
-    async def _multi_get(self, conn, *keys, with_cas=True):
+    async def _multi_get(self, conn: Connection, *keys: bytes, with_cas: bool = True) -> _Result:
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
@@ -117,7 +120,7 @@ class Client(object):
         return received, cas_tokens
 
     @acquire
-    async def delete(self, conn, key):
+    async def delete(self, conn: Connection, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
 
         :param key: is the key to delete.
@@ -133,8 +136,12 @@ class Client(object):
             raise ClientException('Memcached delete failed', response)
         return response == const.DELETED
 
+    @overload
+    async def get(self, conn: Connection, key: bytes) -> Optional[bytes]: ...
+    @overload
+    async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes: ...
     @acquire
-    async def get(self, conn, key, default=None):
+    async def get(self, conn: Connection, key: bytes, default: Optional[bytes] = None) -> Optional[bytes]:
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -145,19 +152,18 @@ class Client(object):
         return values.get(key, default)
 
     @acquire
-    async def gets(self, conn, key, default=None):
+    async def gets(self, conn: Connection, key: bytes, default: Optional[bytes] = None) -> Tuple[Optional[bytes], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, ``bytes tuple with the value and the cas
         """
-        values, cas_tokens = await self._multi_get(
-            conn, key, with_cas=True)
+        values, cas_tokens = await self._multi_get(conn, key, with_cas=True)
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn, *keys):
+    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[bytes], ...]:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -169,7 +175,7 @@ class Client(object):
         return tuple(values.get(key) for key in keys)
 
     @acquire
-    async def stats(self, conn, args=None):
+    async def stats(self, conn: Connection, args: Optional[bytes] = None) -> Dict[bytes, Optional[bytes]]:
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
         # resp - STAT <name> <value>\r\n (one per result)
@@ -179,7 +185,7 @@ class Client(object):
 
         conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
 
-        result = {}
+        result: Dict[bytes, Optional[bytes]] = {}
 
         resp = await conn.reader.readline()
         while resp != b'END\r\n':
@@ -198,8 +204,9 @@ class Client(object):
 
         return result
 
-    async def _storage_command(self, conn, command, key, value,
-                               flags=0, exptime=0, cas=None):
+    async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
+                               value: bytes, flags: int = 0, exptime: int = 0,
+                               cas: Optional[bytes] = None) -> bool:
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
@@ -227,11 +234,11 @@ class Client(object):
 
         if resp not in (
                 const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
-            raise ClientException('stats {} failed'.format(command), resp)
+            raise ClientException('stats {} failed'.format(command.decode()), resp)
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn, key, value, exptime=0):
+    async def set(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -242,12 +249,11 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        resp = await self._storage_command(
-            conn, b'set', key, value, flags, exptime)
-        return resp
+        return await self._storage_command(conn, b"set", key, value, flags, exptime)
 
     @acquire
-    async def cas(self, conn, key, value, cas_token, exptime=0):
+    async def cas(self, conn: Connection, key: bytes, value: bytes, cas_token: bytes,
+                  exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't change from first retrieval
@@ -261,12 +267,10 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        resp = await self._storage_command(
-            conn, b'cas', key, value, flags, exptime, cas=cas_token)
-        return resp
+        return await self._storage_command(conn, b"cas", key, value, flags, exptime, cas=cas_token)
 
     @acquire
-    async def add(self, conn, key, value, exptime=0):
+    async def add(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -277,11 +281,10 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(
-            conn, b"add", key, value, flags, exptime)
+        return await self._storage_command(conn, b"add", key, value, flags, exptime)
 
     @acquire
-    async def replace(self, conn, key, value, exptime=0):
+    async def replace(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -292,11 +295,10 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(
-            conn, b"replace", key, value, flags, exptime)
+        return await self._storage_command(conn, b"replace", key, value, flags, exptime)
 
     @acquire
-    async def append(self, conn, key, value, exptime=0):
+    async def append(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -306,11 +308,10 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(
-            conn, b"append", key, value, flags, exptime)
+        return await self._storage_command(conn, b"append", key, value, flags, exptime)
 
     @acquire
-    async def prepend(self, conn, key, value, exptime=0):
+    async def prepend(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
         """Add data to an existing key before existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -320,10 +321,9 @@ class Client(object):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(
-            conn, b"prepend", key, value, flags, exptime)
+        return await self._storage_command(conn, b"prepend", key, value, flags, exptime)
 
-    async def _incr_decr(self, conn, command, key, delta):
+    async def _incr_decr(self, conn: Connection, command: bytes, key: bytes, delta: int) -> Optional[int]:
         delta_byte = str(delta).encode('utf-8')
         cmd = b' '.join([command, key, delta_byte]) + b'\r\n'
         resp = await self._execute_simple_command(conn, cmd)
@@ -333,7 +333,7 @@ class Client(object):
         return int(resp) if resp.isdigit() else None
 
     @acquire
-    async def incr(self, conn, key, increment=1):
+    async def incr(self, conn: Connection, key: bytes, increment: int = 1) -> Optional[int]:
         """Command is used to change data for some item in-place,
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -347,12 +347,10 @@ class Client(object):
         this value was not found
         """
         assert self._validate_key(key)
-        resp = await self._incr_decr(
-            conn, b'incr', key, increment)
-        return resp
+        return await self._incr_decr(conn, b"incr", key, increment)
 
     @acquire
-    async def decr(self, conn, key, decrement=1):
+    async def decr(self, conn: Connection, key: bytes, decrement: int = 1) -> Optional[int]:
         """Command is used to change data for some item in-place,
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -366,12 +364,10 @@ class Client(object):
         this value was not found
         """
         assert self._validate_key(key)
-        resp = await self._incr_decr(
-            conn, b'decr', key, decrement)
-        return resp
+        return await self._incr_decr(conn, b"decr", key, decrement)
 
     @acquire
-    async def touch(self, conn, key, exptime):
+    async def touch(self, conn: Connection, key: bytes, exptime: int) -> bool:
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
@@ -390,26 +386,24 @@ class Client(object):
         return resp == const.TOUCHED
 
     @acquire
-    async def version(self, conn):
+    async def version(self, conn: Connection) -> bytes:
         """Current version of the server.
 
         :return: ``bytes``, memcached version for current the server.
         """
 
         command = b'version\r\n'
-        response = await self._execute_simple_command(
-            conn, command)
+        response = await self._execute_simple_command(conn, command)
         if not response.startswith(const.VERSION):
             raise ClientException('Memcached version failed', response)
         version, number = response.rstrip(b"\r\n").split(maxsplit=1)
         return number
 
     @acquire
-    async def flush_all(self, conn):
+    async def flush_all(self, conn: Connection) -> None:
         """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
-        response = await self._execute_simple_command(
-            conn, command)
+        response = await self._execute_simple_command(conn, command)
 
         if const.OK != response:
             raise ClientException('Memcached flush_all failed', response)

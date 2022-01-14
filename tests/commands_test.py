@@ -16,7 +16,7 @@ async def test_version(mcache):
             mcache,
             "_execute_simple_command",
             new_callable=MagicMock) as patched:
-        fut = asyncio.Future()
+        fut: asyncio.Future[bytes] = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
@@ -37,7 +37,7 @@ async def test_flush_all(mcache):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future()
+        fut: asyncio.Future[bytes] = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
@@ -56,7 +56,7 @@ async def test_set_get(mcache):
     assert test_value == value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future()
+        fut: asyncio.Future[bytes] = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
         with pytest.raises(ClientException):
@@ -238,7 +238,7 @@ async def test_delete(mcache):
     assert test_value is None
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future()
+        fut: asyncio.Future[bytes] = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
 
@@ -330,7 +330,7 @@ async def test_touch(mcache):
     assert not test_value
 
     with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut = asyncio.Future()
+        fut: asyncio.Future[bytes] = asyncio.Future()
         fut.set_result(b'SERVER_ERROR error\r\n')
         patched.return_value = fut
 

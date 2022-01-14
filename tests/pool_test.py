@@ -1,7 +1,7 @@
 import random
 import asyncio
 import pytest
-from aiomcache.pool import MemcachePool, _connection
+from aiomcache.pool import Connection, MemcachePool
 from aiomcache.client import acquire
 
 
@@ -29,7 +29,7 @@ async def test_pool_acquire_release2(mcache_params):
     # put dead connection to the pool
     writer.close()
     reader.feed_eof()
-    conn = _connection(reader, writer)
+    conn = Connection(reader, writer)
     await pool._pool.put(conn)
     conn = await pool.acquire()
     assert isinstance(conn.reader, asyncio.StreamReader)
@@ -55,6 +55,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
 
     # Add a valid connection
     _conn = await pool._create_new_conn()
+    assert _conn is not None
     await pool._pool.put(_conn)
     assert pool.size() == 1
 
