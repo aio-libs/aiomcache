@@ -46,12 +46,13 @@ class Client(object):
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
             raise ValidationException('key must be bytes', key)
 
-        m = self._valid_key_re.match(key.decode())
+        key_str = key.decode()
+        m = self._valid_key_re.match(key_str)
         if m:
             # in python re, $ matches either end of line or right before
             # \n at end of line. We can't allow latter case, so
             # making sure length matches is simplest way to detect
-            if len(m.group(0)) != len(key):
+            if len(m.group(0)) != len(key_str):
                 raise ValidationException('trailing newline', key)
         else:
             raise ValidationException('invalid key', key)
