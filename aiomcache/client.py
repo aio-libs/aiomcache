@@ -37,7 +37,7 @@ class Client(object):
         self._pool = MemcachePool(
             host, port, minsize=pool_minsize, maxsize=pool_size)
 
-    # key may be anything accept whitespace and control chars, upto 250 characters.
+    # key may be anything except whitespace and control chars, upto 250 characters.
     # Must be str for unicode-aware regex.
     _valid_key_re = re.compile("^[^\\s\x00-\x1F\x7F-\x9F]{1,250}$")
 
