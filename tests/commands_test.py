@@ -27,15 +27,15 @@ async def test_valid_key(mcache, key):
     b"\nbar",
     b"foo\x20\x0Dbar",
     b"\x18\x0E",
-    b"\xFE\xFF",
+    b"\x20\x60",
     b"\x30\x00",
     b"\x20\x01",
     # Control characters
     b"foo\x00bar",
     b"\x1F",
     b"\x7F",
-    b"\x80",
-    b"\x9F",
+    "\u0080".encode(),
+    "\u009F".encode(),
 ))
 @pytest.mark.asyncio
 async def test_invalid_key(mcache, key):
