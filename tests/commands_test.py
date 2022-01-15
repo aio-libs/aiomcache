@@ -40,7 +40,7 @@ async def test_valid_key(mcache, key):
 @pytest.mark.asyncio
 async def test_invalid_key(mcache, key):
     with pytest.raises(ValidationException):
-        mcache._validate_key(key) == key
+        mcache._validate_key(key)
 
 
 @pytest.mark.asyncio
