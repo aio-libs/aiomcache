@@ -8,8 +8,7 @@ from setuptools import find_packages, setup
 with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
         __file__)), 'aiomcache', '__init__.py'), 'r', 'latin1') as fp:
     try:
-        version = re.findall(r"^__version__ = '([^']+)'\r?$",
-                             fp.read(), re.M)[0]
+        version = re.findall(r'^__version__ = "([^"]+)"\r?$', fp.read(), re.M)[0]
     except IndexError:
         raise RuntimeError('Unable to determine version.')
 
