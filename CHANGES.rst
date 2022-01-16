@@ -9,6 +9,7 @@ CHANGES
 
 - Added support for Python 3.10
 - Added support for non-ascii keys
+- Added type annotations
 
 0.6.0 (2017-12-03)
 ==================
