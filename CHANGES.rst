@@ -5,7 +5,7 @@ CHANGES
 .. towncrier release notes start
 
 0.7.0rc0 (2022-01-16)
-==================
+=====================
 
 - Added support for Python 3.10
 - Added support for non-ascii keys
