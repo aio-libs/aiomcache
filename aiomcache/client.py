@@ -37,21 +37,22 @@ class Client(object):
         self._pool = MemcachePool(
             host, port, minsize=pool_minsize, maxsize=pool_size)
 
-    # key supports ascii sans space and control chars
-    # \x21 is !, right after space, and \x7e is -, right before DEL
-    # also 1 <= len <= 250 as per the spec
-    _valid_key_re = re.compile(b'^[\x21-\x7e]{1,250}$')
+    # key may be anything except whitespace and control chars, upto 250 characters.
+    # Must be str for unicode-aware regex.
+    _valid_key_re = re.compile("^[^\\s\x00-\x1F\x7F-\x9F]{1,250}$")
 
     def _validate_key(self, key: bytes) -> bytes:
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
             raise ValidationException('key must be bytes', key)
 
-        m = self._valid_key_re.match(key)
+        # Must decode to str for unicode-aware comparison.
+        key_str = key.decode()
+        m = self._valid_key_re.match(key_str)
         if m:
             # in python re, $ matches either end of line or right before
             # \n at end of line. We can't allow latter case, so
             # making sure length matches is simplest way to detect
-            if len(m.group(0)) != len(key):
+            if len(m.group(0)) != len(key_str):
                 raise ValidationException('trailing newline', key)
         else:
             raise ValidationException('invalid key', key)

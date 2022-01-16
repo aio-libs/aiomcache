@@ -7,6 +7,42 @@ import pytest
 from aiomcache.exceptions import ClientException, ValidationException
 
 
+@pytest.mark.parametrize("key", (
+    b"key",
+    b"123",
+    bytes("!@#", "utf-8"),
+    bytes("中文", "utf-8"),
+    bytes("こんにちは", "utf-8"),
+    bytes("안녕하세요", "utf-8"),
+))
+@pytest.mark.asyncio
+async def test_valid_key(mcache, key):
+    assert mcache._validate_key(key) == key
+
+
+@pytest.mark.parametrize("key", (
+    # Whitespace
+    b"foo bar",
+    b"foo\t",
+    b"\nbar",
+    b"foo\x20\x0Dbar",
+    b"\x18\x0E",
+    b"\x20\x60",
+    b"\x30\x00",
+    b"\x20\x01",
+    # Control characters
+    b"foo\x00bar",
+    b"\x1F",
+    b"\x7F",
+    "\u0080".encode(),
+    "\u009F".encode(),
+))
+@pytest.mark.asyncio
+async def test_invalid_key(mcache, key):
+    with pytest.raises(ValidationException, match="invalid key"):
+        mcache._validate_key(key)
+
+
 @pytest.mark.asyncio
 async def test_version(mcache):
     version = await mcache.version()
