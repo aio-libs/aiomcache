@@ -1,21 +1,28 @@
 import functools
 import re
+import sys
 from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
 
+if sys.version_info >= (3, 10):
+    from typing import Concatenate, ParamSpec
+else:
+    from typing_extensions import Concatenate, ParamSpec
+
 __all__ = ['Client']
 
 _T = TypeVar("_T")
+_P = ParamSpec("_P")
 _Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
 
 
-def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
+def acquire(func: Callable[Concatenate["Client", Connection, _P], Awaitable[_T]]) -> Callable[Concatenate["Client", _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "Client", *args: object, **kwargs: object) -> _T:
+    async def wrapper(self: "Client", *args: _P.args, **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)

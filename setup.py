@@ -44,7 +44,7 @@ setup(name='aiomcache',
       license='BSD',
       packages=find_packages(),
       python_requires='>=3.7',
-      install_requires=(),
+      install_requires=('typing_extensions>=3.10; python_version<"3.10"',),
       tests_require=("nose",),
       test_suite='nose.collector',
       include_package_data=True)
