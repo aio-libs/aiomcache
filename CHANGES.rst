@@ -4,7 +4,7 @@ CHANGES
 
 .. towncrier release notes start
 
-0.7.0rc0 (2022-01-16)
+0.7.0 (2022-01-20)
 =====================
 
 - Added support for Python 3.10
