@@ -116,6 +116,6 @@ async def mcache_pylibmc(mcache_params):
         **mcache_params)
     try:
         yield client
-    except:
+    except BaseException:
         await client.close()
         raise

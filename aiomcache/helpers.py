@@ -1,5 +1,5 @@
+import pickle  # noqa: S403
 from enum import IntEnum
-import pickle
 from typing import Any, Tuple
 
 
@@ -15,13 +15,13 @@ class PyLibMCFlags(IntEnum):
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640
 async def pylibmc_get_flag_handler(value: Any, flags: int) -> Any:
     if flags == PyLibMCFlags.PYLIBMC_FLAG_PICKLE:
-        return pickle.loads(value)
+        return pickle.loads(value)  # noqa: S301
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_LONG:
         return int(value)
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_BOOL:
         return bool(int(value))
     else:
-        assert False  # pragma: no cover
+        raise Exception(f"unrecognized pylibmc flag: {flags}")  # pragma: no cover
 
 
 # see _PylibMC_serialize_native in:
@@ -33,8 +33,7 @@ async def pylibmc_set_flag_handler(value: Any) -> Tuple[Any, int]:
                PyLibMCFlags.PYLIBMC_FLAG_BOOL.value
 
     if isinstance(value, int):
-        return str(value).encode('utf-8'), \
-           PyLibMCFlags.PYLIBMC_FLAG_LONG.value
+        return str(value).encode('utf-8'), PyLibMCFlags.PYLIBMC_FLAG_LONG.value
 
     # default is pickle
     return pickle.dumps(value), PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value

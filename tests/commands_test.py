@@ -1,9 +1,9 @@
 import asyncio
-import pylibmc  # type: ignore
+from typing import Any, List
 from unittest import mock
 from unittest.mock import MagicMock
-from typing import List, Any
 
+import pylibmc  # type: ignore
 import pytest
 
 from aiomcache.exceptions import ClientException, ValidationException
