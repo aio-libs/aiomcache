@@ -1,7 +1,8 @@
 import asyncio
-import pylibmc
+import pylibmc  # type: ignore
 from unittest import mock
 from unittest.mock import MagicMock
+from typing import List, Any
 
 import pytest
 
@@ -387,7 +388,7 @@ async def test_pylibmc_get_helper(mcache_pylibmc):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
-    key_values = [
+    key_values: List[List[Any]] = [
         ['key', 'key'],
         [b'bkey', b'bkey'],
         ['False', False],
@@ -415,7 +416,7 @@ async def test_pylibmc_set_helper(mcache_pylibmc):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
-    key_values = [
+    key_values: List[List[Any]] = [
         ['key', 'key'],
         [b'bkey', b'bkey'],
         ['False', False],

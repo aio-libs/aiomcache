@@ -1,6 +1,6 @@
 import functools
 import re
-from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
+from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload, Any
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -9,7 +9,7 @@ from .pool import Connection, MemcachePool
 __all__ = ['Client']
 
 _T = TypeVar("_T")
-_Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
+_Result = Tuple[Dict[bytes, Any], Dict[bytes, Optional[int]]]
 
 
 def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
@@ -32,7 +32,8 @@ class Client(object):
 
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 get_flag_handler=None, set_flag_handler=None):
+                 get_flag_handler: Optional[Callable[[Any, int], Awaitable[Any]]] = None,
+                 set_flag_handler: Optional[Callable[[Any], Awaitable[Tuple[Any, int]]]] = None):
         """
         Creates new Client instance.
 
@@ -144,12 +145,14 @@ class Client(object):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
+
         return received, cas_tokens
 
     @acquire
     async def delete(self, conn: Connection, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: is the key to delete.
         :return: True if case values was deleted or False to indicate
         that the item with this key was not found.
@@ -161,6 +164,7 @@ class Client(object):
 
         if response not in (const.DELETED, const.NOT_FOUND):
             raise ClientException('Memcached delete failed', response)
+
         return response == const.DELETED
 
     @overload
@@ -174,9 +178,10 @@ class Client(object):
     @acquire
     async def get(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Optional[bytes]:
+    ) -> Optional[Any]:
         """Gets a single value from the server.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
@@ -187,9 +192,10 @@ class Client(object):
     @acquire
     async def gets(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Tuple[Optional[bytes], Optional[int]]:
+    ) -> Tuple[Optional[Any], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, ``bytes tuple with the value and the cas
@@ -198,9 +204,10 @@ class Client(object):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[bytes], ...]:
+    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[Any], ...]:
         """Takes a list of keys and returns a list of values.
 
+        :param conn: ``Connection```, is the connection to use
         :param keys: ``list`` keys for the item being fetched.
         :return: ``list`` of values for the specified keys.
         :raises:``ValidationException``, ``ClientException``,
@@ -242,7 +249,7 @@ class Client(object):
         return result
 
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
-                               value: bytes, flags: int = 0, exptime: int = 0,
+                               value: Any, flags: int = 0, exptime: int = 0,
                                cas: Optional[bytes] = None) -> bool:
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
@@ -279,7 +286,7 @@ class Client(object):
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def set(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -293,12 +300,13 @@ class Client(object):
         return await self._storage_command(conn, b"set", key, value, flags, exptime)
 
     @acquire
-    async def cas(self, conn: Connection, key: bytes, value: bytes, cas_token: bytes,
+    async def cas(self, conn: Connection, key: bytes, value: Any, cas_token: bytes,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't change from first retrieval
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
         :param exptime: ``int``, is expiration time. If it's 0, the
@@ -311,10 +319,11 @@ class Client(object):
         return await self._storage_command(conn, b"cas", key, value, flags, exptime, cas=cas_token)
 
     @acquire
-    async def add(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def add(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -325,10 +334,11 @@ class Client(object):
         return await self._storage_command(conn, b"add", key, value, flags, exptime)
 
     @acquire
-    async def replace(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def replace(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -339,9 +349,10 @@ class Client(object):
         return await self._storage_command(conn, b"replace", key, value, flags, exptime)
 
     @acquire
-    async def append(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def append(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -381,6 +392,7 @@ class Client(object):
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param increment: ``int``, is the amount by which the client
@@ -398,6 +410,7 @@ class Client(object):
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param decrement: ``int``, is the amount by which the client
@@ -414,6 +427,7 @@ class Client(object):
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
+        :param conn: ``Connection```, is the connection to use
         :param key: ``bytes``, is the key to update expiration time
         :param exptime: ``int``, is expiration time. This replaces the existing
         expiration time.
@@ -432,6 +446,7 @@ class Client(object):
     async def version(self, conn: Connection) -> bytes:
         """Current version of the server.
 
+        :param conn: ``Connection```, is the connection to use
         :return: ``bytes``, memcached version for current the server.
         """
 

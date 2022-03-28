@@ -109,11 +109,13 @@ async def mcache(mcache_params):
 
 
 @pytest.yield_fixture
-def mcache_pylibmc(mcache_params, loop):
+async def mcache_pylibmc(mcache_params):
     client = aiomcache.Client(
-        loop=loop,
         get_flag_handler=aiomcache.helpers.pylibmc_get_flag_handler,
         set_flag_handler=aiomcache.helpers.pylibmc_set_flag_handler,
         **mcache_params)
-    yield client
-    client.close()
+    try:
+        yield client
+    except:
+        await client.close()
+        raise

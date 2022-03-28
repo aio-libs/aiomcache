@@ -1,6 +1,6 @@
-import asyncio
 from enum import IntEnum
 import pickle
+from typing import Any, Tuple
 
 
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.h#L63
@@ -13,8 +13,7 @@ class PyLibMCFlags(IntEnum):
 
 # see PylibMC_deserialize_native in:
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640
-@asyncio.coroutine
-def pylibmc_get_flag_handler(value, flags):
+async def pylibmc_get_flag_handler(value: Any, flags: int) -> Any:
     if flags == PyLibMCFlags.PYLIBMC_FLAG_PICKLE:
         return pickle.loads(value)
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_LONG:
@@ -27,8 +26,7 @@ def pylibmc_get_flag_handler(value, flags):
 
 # see _PylibMC_serialize_native in:
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L1241
-@asyncio.coroutine
-def pylibmc_set_flag_handler(value):
+async def pylibmc_set_flag_handler(value: Any) -> Tuple[Any, int]:
     # bool is subclass of int so this needs to be first
     if isinstance(value, bool):
         return b'1' if value else b'0', \
@@ -36,7 +34,7 @@ def pylibmc_set_flag_handler(value):
 
     if isinstance(value, int):
         return str(value).encode('utf-8'), \
-               PyLibMCFlags.PYLIBMC_FLAG_LONG.value
+           PyLibMCFlags.PYLIBMC_FLAG_LONG.value
 
     # default is pickle
     return pickle.dumps(value), PyLibMCFlags.PYLIBMC_FLAG_PICKLE.value
