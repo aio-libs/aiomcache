@@ -147,7 +147,7 @@ class Client(object):
     async def delete(self, conn: Connection, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: is the key to delete.
         :return: True if case values was deleted or False to indicate
         that the item with this key was not found.
@@ -176,7 +176,7 @@ class Client(object):
     ) -> Optional[Any]:
         """Gets a single value from the server.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
@@ -190,7 +190,7 @@ class Client(object):
     ) -> Tuple[Optional[Any], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, ``bytes tuple with the value and the cas
@@ -202,7 +202,7 @@ class Client(object):
     async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[Any], ...]:
         """Takes a list of keys and returns a list of values.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param keys: ``list`` keys for the item being fetched.
         :return: ``list`` of values for the specified keys.
         :raises:``ValidationException``, ``ClientException``,
@@ -301,7 +301,7 @@ class Client(object):
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't change from first retrieval
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
         :param exptime: ``int``, is expiration time. If it's 0, the
@@ -318,7 +318,7 @@ class Client(object):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -333,7 +333,7 @@ class Client(object):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -347,7 +347,7 @@ class Client(object):
     async def append(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
@@ -387,7 +387,7 @@ class Client(object):
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param increment: ``int``, is the amount by which the client
@@ -405,7 +405,7 @@ class Client(object):
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param decrement: ``int``, is the amount by which the client
@@ -422,7 +422,7 @@ class Client(object):
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key to update expiration time
         :param exptime: ``int``, is expiration time. This replaces the existing
         expiration time.
@@ -441,7 +441,7 @@ class Client(object):
     async def version(self, conn: Connection) -> bytes:
         """Current version of the server.
 
-        :param conn: ``Connection```, is the connection to use
+        :param conn: ``Connection``, is the connection to use
         :return: ``bytes``, memcached version for current the server.
         """
 
