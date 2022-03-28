@@ -382,8 +382,8 @@ async def test_close(mcache):
     assert mcache._pool.size() == 0
 
 
-@pytest.mark.run_loop
-def test_pylibmc_get_helper(mcache_pylibmc):
+@pytest.mark.asyncio
+async def test_pylibmc_get_helper(mcache_pylibmc):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
@@ -406,12 +406,12 @@ def test_pylibmc_get_helper(mcache_pylibmc):
             # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
             key = key.encode('utf-8')
 
-        v2 = yield from mcache_pylibmc.get(key)
+        v2 = await mcache_pylibmc.get(key)
         assert v2 == value
 
 
-@pytest.mark.run_loop
-def test_pylibmc_set_helper(mcache_pylibmc):
+@pytest.mark.asyncio
+async def test_pylibmc_set_helper(mcache_pylibmc):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
@@ -433,7 +433,7 @@ def test_pylibmc_set_helper(mcache_pylibmc):
             # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
             key = key.encode('utf-8')
 
-        yield from mcache_pylibmc.set(key, value)
+        await mcache_pylibmc.set(key, value)
 
         v2 = mc_client.get(orig_key)
         assert v2 == value

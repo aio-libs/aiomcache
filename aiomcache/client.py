@@ -131,7 +131,7 @@ class Client(object):
                     raise ClientException('received non zero flags')
 
                 if flags and self._get_flag_handler:
-                    val = yield from self._get_flag_handler(val, flags)
+                    val = await self._get_flag_handler(val, flags)
                 elif flags != 0:
                     raise ClientException('received non zero flags')
 
@@ -264,7 +264,7 @@ class Client(object):
 
         if flags == 0 and self._set_flag_handler and \
                 not isinstance(value, bytes):
-            value, flags = yield from self._set_flag_handler(value)
+            value, flags = await self._set_flag_handler(value)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
