@@ -1,61 +1,58 @@
 import asyncio
-from collections import namedtuple
+from typing import NamedTuple, Optional, Set
 
 __all__ = ['MemcachePool']
 
 
-_connection = namedtuple('connection', ['reader', 'writer'])
+class Connection(NamedTuple):
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
 
 
 class MemcachePool:
-
-    def __init__(self, host, port, *, minsize, maxsize, loop=None):
-        loop = loop if loop is not None else asyncio.get_event_loop()
+    def __init__(self, host: str, port: int, *, minsize: int, maxsize: int):
         self._host = host
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
-        self._loop = loop
-        self._pool = asyncio.Queue(loop=loop)
-        self._in_use = set()
+        self._pool: asyncio.Queue[Connection] = asyncio.Queue()
+        self._in_use: Set[Connection] = set()
 
-    @asyncio.coroutine
-    def clear(self):
+    async def clear(self) -> None:
         """Clear pool connections."""
         while not self._pool.empty():
-            conn = yield from self._pool.get()
+            conn = await self._pool.get()
             self._do_close(conn)
 
-    def _do_close(self, conn):
+    def _do_close(self, conn: Connection) -> None:
         conn.reader.feed_eof()
         conn.writer.close()
 
-    @asyncio.coroutine
-    def acquire(self):
+    async def acquire(self) -> Connection:
         """Acquire connection from the pool, or spawn new one
         if pool maxsize permits.
 
         :return: ``tuple`` (reader, writer)
         """
         while self.size() == 0 or self.size() < self._minsize:
-            _conn = yield from self._create_new_conn()
+            _conn = await self._create_new_conn()
             if _conn is None:
                 break
             self._pool.put_nowait(_conn)
 
-        conn = None
+        conn: Optional[Connection] = None
         while not conn:
-            _conn = yield from self._pool.get()
+            _conn = await self._pool.get()
             if _conn.reader.at_eof() or _conn.reader.exception():
                 self._do_close(_conn)
-                conn = yield from self._create_new_conn()
+                conn = await self._create_new_conn()
             else:
                 conn = _conn
 
         self._in_use.add(conn)
         return conn
 
-    def release(self, conn):
+    def release(self, conn: Connection) -> None:
         """Releases connection back to the pool.
 
         :param conn: ``namedtuple`` (reader, writer)
@@ -66,13 +63,12 @@ class MemcachePool:
         else:
             self._pool.put_nowait(conn)
 
-    @asyncio.coroutine
-    def _create_new_conn(self):
+    async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
-            reader, writer = yield from asyncio.open_connection(
-                self._host, self._port, loop=self._loop)
+            reader, writer = await asyncio.open_connection(
+                self._host, self._port)
             if self.size() < self._maxsize:
-                return _connection(reader, writer)
+                return Connection(reader, writer)
             else:
                 reader.feed_eof()
                 writer.close()
@@ -80,5 +76,5 @@ class MemcachePool:
         else:
             return None
 
-    def size(self):
+    def size(self) -> int:
         return self._pool.qsize() + len(self._in_use)

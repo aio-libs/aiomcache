@@ -1,25 +1,16 @@
 import codecs
 import os
 import re
-import sys
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 
 with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
         __file__)), 'aiomcache', '__init__.py'), 'r', 'latin1') as fp:
     try:
-        version = re.findall(r"^__version__ = '([^']+)'\r?$",
-                             fp.read(), re.M)[0]
+        version = re.findall(r'^__version__ = "([^"]+)"\r?$', fp.read(), re.M)[0]
     except IndexError:
         raise RuntimeError('Unable to determine version.')
-
-
-if sys.version_info >= (3, 4):
-    install_requires = []
-else:
-    install_requires = ['asyncio']
-
-tests_require = install_requires + ['nose']
 
 
 def read(f):
@@ -29,14 +20,15 @@ def read(f):
 setup(name='aiomcache',
       version=version,
       description=('Minimal pure python memcached client'),
-      long_description='\n\n'.join((read('README.rst'), read('CHANGES.txt'))),
+      long_description='\n\n'.join((read('README.rst'), read('CHANGES.rst'))),
       classifiers=[
           'License :: OSI Approved :: BSD License',
           'Intended Audience :: Developers',
           'Programming Language :: Python',
-          'Programming Language :: Python :: 3.4',
-          'Programming Language :: Python :: 3.5',
-          'Programming Language :: Python :: 3.6',
+          'Programming Language :: Python :: 3.7',
+          'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
+          'Programming Language :: Python :: 3.10',
           'Operating System :: POSIX',
           'Operating System :: MacOS :: MacOS X',
           'Operating System :: Microsoft :: Windows',
@@ -51,8 +43,8 @@ setup(name='aiomcache',
       url='https://github.com/aio-libs/aiomcache/',
       license='BSD',
       packages=find_packages(),
-      python_requires='>=3.4.0',
-      install_requires=install_requires,
-      tests_require=tests_require,
+      python_requires='>=3.7',
+      install_requires=(),
+      tests_require=("nose",),
       test_suite='nose.collector',
       include_package_data=True)
