@@ -131,11 +131,6 @@ class Client(object):
                 elif flags != 0:
                     raise ClientException('received non zero flags')
 
-                if flags and self._get_flag_handler:
-                    val = await self._get_flag_handler(val, flags)
-                elif flags != 0:
-                    raise ClientException('received non zero flags')
-
                 received[key] = val
                 cas_tokens[key] = int(terms[4]) if with_cas else None
             else:
