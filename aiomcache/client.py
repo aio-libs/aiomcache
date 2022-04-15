@@ -1,6 +1,6 @@
 import functools
 import re
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload, Union
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -9,13 +9,18 @@ from .pool import Connection, MemcachePool
 __all__ = ['Client']
 
 _T = TypeVar("_T")
+_FlagT = TypeVar("_FlagT")
 _Result = Tuple[Dict[bytes, Any], Dict[bytes, Optional[int]]]
+_ClientT = Union[bytes, _FlagT]
+
+_get_flag_callable = Callable[[bytes, int], Awaitable[_FlagT]]
+_set_flag_callable = Callable[[_FlagT], Awaitable[Tuple[bytes, int]]]
 
 
 def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "Client", *args: object, **kwargs: object) -> _T:
+    async def wrapper(self: "Client", *args: Tuple[Any], **kwargs: Dict[str, Any]) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -28,12 +33,12 @@ def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
     return wrapper
 
 
-class Client(object):
+class Client:
 
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 get_flag_handler: Optional[Callable[[bytes, int], Awaitable[Any]]] = None,
-                 set_flag_handler: Optional[Callable[[Any], Awaitable[Tuple[bytes, int]]]] = None):
+                 get_flag_handler: Optional[_get_flag_callable] = None,
+                 set_flag_handler: Optional[_set_flag_callable] = None):
         """
         Creates new Client instance.
 
@@ -174,7 +179,7 @@ class Client(object):
     @acquire
     async def get(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Optional[Any]:
+    ) -> Optional[_ClientT]:
         """Gets a single value from the server.
 
         :param conn: ``Connection``, is the connection to use
@@ -188,7 +193,7 @@ class Client(object):
     @acquire
     async def gets(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Tuple[Optional[Any], Optional[int]]:
+    ) -> Tuple[Optional[_ClientT], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
         :param conn: ``Connection``, is the connection to use
@@ -200,7 +205,7 @@ class Client(object):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[Any], ...]:
+    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[_ClientT], ...]:
         """Takes a list of keys and returns a list of values.
 
         :param conn: ``Connection``, is the connection to use
@@ -245,7 +250,7 @@ class Client(object):
         return result
 
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
-                               value: Any, flags: int = 0, exptime: int = 0,
+                               value: _ClientT, flags: int = 0, exptime: int = 0,
                                cas: Optional[bytes] = None) -> bool:
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
@@ -281,7 +286,7 @@ class Client(object):
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
+    async def set(self, conn: Connection, key: bytes, value: _ClientT, exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -295,7 +300,7 @@ class Client(object):
         return await self._storage_command(conn, b"set", key, value, flags, exptime)
 
     @acquire
-    async def cas(self, conn: Connection, key: bytes, value: Any, cas_token: bytes,
+    async def cas(self, conn: Connection, key: bytes, value: _ClientT, cas_token: bytes,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
@@ -314,7 +319,7 @@ class Client(object):
         return await self._storage_command(conn, b"cas", key, value, flags, exptime, cas=cas_token)
 
     @acquire
-    async def add(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
+    async def add(self, conn: Connection, key: bytes, value: _ClientT, exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -329,7 +334,7 @@ class Client(object):
         return await self._storage_command(conn, b"add", key, value, flags, exptime)
 
     @acquire
-    async def replace(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
+    async def replace(self, conn: Connection, key: bytes, value: _ClientT, exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -344,7 +349,7 @@ class Client(object):
         return await self._storage_command(conn, b"replace", key, value, flags, exptime)
 
     @acquire
-    async def append(self, conn: Connection, key: bytes, value: Any, exptime: int = 0) -> bool:
+    async def append(self, conn: Connection, key: bytes, value: _ClientT, exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
         :param conn: ``Connection``, is the connection to use
