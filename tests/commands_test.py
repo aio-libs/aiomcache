@@ -1,9 +1,11 @@
 import asyncio
-from typing import Any, List
 from unittest import mock
 from unittest.mock import MagicMock
 
-import pylibmc
+# error: Skipping analyzing "pylibmc": module is installed, but missing library stubs or py.typed marker  [import]
+# See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+import pylibmc  # type: ignore
+
 import pytest
 
 from aiomcache.exceptions import ClientException, ValidationException

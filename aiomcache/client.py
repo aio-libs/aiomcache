@@ -1,6 +1,7 @@
 import functools
 import re
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload, Union
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload, \
+    Union, Generic
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -33,7 +34,7 @@ def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
     return wrapper
 
 
-class Client:
+class Client(Generic[_FlagT]):
 
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
