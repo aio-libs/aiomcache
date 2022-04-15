@@ -7,7 +7,8 @@ import docker as docker_mod
 import memcache
 import pytest
 
-import aiomcache.helpers
+import aiomcache
+from aiomcache.helpers import pylibmc_get_flag_handler, pylibmc_set_flag_handler
 
 
 mcache_server_option = "localhost"
@@ -111,8 +112,8 @@ async def mcache(mcache_params):
 @pytest.yield_fixture
 async def mcache_pylibmc(mcache_params):
     client = aiomcache.Client(
-        get_flag_handler=aiomcache.helpers.pylibmc_get_flag_handler,
-        set_flag_handler=aiomcache.helpers.pylibmc_set_flag_handler,
+        get_flag_handler=pylibmc_get_flag_handler,
+        set_flag_handler=pylibmc_set_flag_handler,
         **mcache_params)
     try:
         yield client

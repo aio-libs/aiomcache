@@ -32,8 +32,8 @@ class Client(object):
 
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 get_flag_handler: Optional[Callable[[Any, int], Awaitable[Any]]] = None,
-                 set_flag_handler: Optional[Callable[[Any], Awaitable[Tuple[Any, int]]]] = None):
+                 get_flag_handler: Optional[Callable[[bytes, int], Awaitable[Any]]] = None,
+                 set_flag_handler: Optional[Callable[[Any], Awaitable[Tuple[bytes, int]]]] = None):
         """
         Creates new Client instance.
 
@@ -126,10 +126,11 @@ class Client(object):
                 if key in received:
                     raise ClientException('duplicate results from server')
 
-                if flags and self._get_flag_handler:
+                if flags:
+                    if not self._get_flag_handler:
+                        raise ClientException('received flags without handler')
+
                     val = await self._get_flag_handler(val, flags)
-                elif flags != 0:
-                    raise ClientException('received non zero flags')
 
                 received[key] = val
                 cas_tokens[key] = int(terms[4]) if with_cas else None
@@ -264,8 +265,7 @@ class Client(object):
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
 
-        if flags == 0 and self._set_flag_handler and \
-                not isinstance(value, bytes):
+        if flags == 0 and self._set_flag_handler and not isinstance(value, bytes):
             value, flags = await self._set_flag_handler(value)
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
