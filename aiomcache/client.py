@@ -10,8 +10,8 @@ __all__ = ['Client']
 
 _T = TypeVar("_T")
 _FlagT = TypeVar("_FlagT")
-_Result = Tuple[Dict[bytes, Any], Dict[bytes, Optional[int]]]
 _ClientT = Union[bytes, _FlagT]
+_Result = Tuple[Dict[bytes, _ClientT], Dict[bytes, Optional[int]]]
 
 _get_flag_callable = Callable[[bytes, int], Awaitable[_FlagT]]
 _set_flag_callable = Callable[[_FlagT], Awaitable[Tuple[bytes, int]]]
