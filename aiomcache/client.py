@@ -21,7 +21,7 @@ _set_flag_callable = Callable[[_FlagT], Awaitable[Tuple[bytes, int]]]
 def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "Client", *args: Tuple[Any], **kwargs: Dict[str, Any]) -> _T:
+    async def wrapper(self: "Client[_FlagT]", *args: Any, **kwargs: Any) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
