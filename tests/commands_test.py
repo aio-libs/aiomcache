@@ -3,7 +3,7 @@ from typing import Any, List
 from unittest import mock
 from unittest.mock import MagicMock
 
-import pylibmc  # type: ignore
+import pylibmc
 import pytest
 
 from aiomcache.exceptions import ClientException, ValidationException
@@ -383,12 +383,38 @@ async def test_close(mcache):
     assert mcache._pool.size() == 0
 
 
+@pytest.mark.parametrize(
+    ('key', 'value'),
+    [
+        ['key', 'key'],
+        [b'bkey', b'bkey'],
+        ['False', False],
+        ['1', 1],
+        ['None', None],
+        ['0.5', 0.5],
+        ['[1,2,3]', [1, 2, 3]],
+        ['(1,2,3)', tuple([1, 2, 3])]
+    ]
+)
 @pytest.mark.asyncio
-async def test_pylibmc_get_helper(mcache_pylibmc):
+async def test_pylibmc_get_helper(mcache_pylibmc, key, value):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
-    key_values: List[List[Any]] = [
+    mc_client.set(key, value)
+
+    if isinstance(key, str):
+        # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
+        # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
+        key = key.encode('utf-8')
+
+    v2 = await mcache_pylibmc.get(key)
+    assert v2 == value
+
+
+@pytest.mark.parametrize(
+    ('key', 'value'),
+    [
         ['key', 'key'],
         [b'bkey', b'bkey'],
         ['False', False],
@@ -398,43 +424,19 @@ async def test_pylibmc_get_helper(mcache_pylibmc):
         ['[1,2,3]', [1, 2, 3]],
         ['(1,2,3)', tuple([1, 2, 3])],
     ]
-
-    for key, value in key_values:
-        mc_client.set(key, value)
-
-        if isinstance(key, str):
-            # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
-            # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
-            key = key.encode('utf-8')
-
-        v2 = await mcache_pylibmc.get(key)
-        assert v2 == value
-
-
+)
 @pytest.mark.asyncio
-async def test_pylibmc_set_helper(mcache_pylibmc):
+async def test_pylibmc_set_helper(mcache_pylibmc, key, value):
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 
-    key_values: List[List[Any]] = [
-        ['key', 'key'],
-        [b'bkey', b'bkey'],
-        ['False', False],
-        ['1', 1],
-        ['None', None],
-        ['0.5', 0.5],
-        ['[1,2,3]', [1, 2, 3]],
-        ['(1,2,3)', tuple([1, 2, 3])],
-    ]
+    orig_key = key
+    if isinstance(key, str):
+        # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
+        # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
+        key = key.encode('utf-8')
 
-    for key, value in key_values:
-        orig_key = key
-        if isinstance(key, str):
-            # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
-            # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
-            key = key.encode('utf-8')
+    await mcache_pylibmc.set(key, value)
 
-        await mcache_pylibmc.set(key, value)
-
-        v2 = mc_client.get(orig_key)
-        assert v2 == value
+    v2 = mc_client.get(orig_key)
+    assert v2 == value
