@@ -20,8 +20,8 @@ async def pylibmc_get_flag_handler(value: Any, flags: int) -> Any:
         return int(value)
     elif flags == PyLibMCFlags.PYLIBMC_FLAG_BOOL:
         return bool(int(value))
-    else:
-        raise Exception(f"unrecognized pylibmc flag: {flags}")  # pragma: no cover
+
+    raise ValueError(f"unrecognized pylibmc flag: {flags}")
 
 
 # see _PylibMC_serialize_native in:
