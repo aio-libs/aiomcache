@@ -2,6 +2,8 @@ import contextlib
 import socket
 import time
 import uuid
+import sys
+from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
 
 import docker as docker_mod
 import memcache
@@ -10,52 +12,70 @@ import pytest
 import aiomcache
 from aiomcache.helpers import pylibmc_get_flag_handler, pylibmc_set_flag_handler
 
+if sys.version_info < (3, 11):
+    from typing_extensions import NotRequired
+else:
+    from typing import NotRequired
+
+
+class McacheParams(TypedDict):
+    host: str
+    port: int
+
+
+class ServerParams(TypedDict):
+    Id: NotRequired[str]
+    host: str
+    port: int
+    mcache_params: McacheParams
+
 
 mcache_server_option = "localhost"
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         '--memcached', help='Memcached server')
 
 
 @pytest.fixture(scope='session')
-def unused_port():
-    def f():
+def unused_port() -> Callable[[], int]:
+    def f() -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(('127.0.0.1', 0))
-            return s.getsockname()[1]
+            return s.getsockname()[1]  # type: ignore[no-any-return]
     return f
 
 
-def pytest_runtest_setup(item):
+def pytest_runtest_setup(item: pytest.Item) -> None:
     global mcache_server_option
     mcache_server_option = item.config.getoption("--memcached", "localhost")
 
 
 @pytest.fixture(scope='session')
-def session_id():
+def session_id() -> str:
     '''Unique session identifier, random string.'''
     return str(uuid.uuid4())
 
 
 @pytest.fixture(scope='session')
-def docker():
+def docker() -> docker_mod.DockerClient:  # type: ignore[no-any-unimported]
     return docker_mod.from_env()
 
 
-def mcache_server_actual(host, port=11211):
+def mcache_server_actual(host: str, port: int = 11211) -> ServerParams:
     port = int(port)
-    container = {
-        'host': host,
-        'port': port,
+    return {
+        "host": host,
+        "port": port,
+        "mcache_params": {"host": host, "port": port}
     }
-    container['mcache_params'] = container.copy()
-    return container
 
 
 @contextlib.contextmanager
-def mcache_server_docker(unused_port, docker, session_id):
+def mcache_server_docker(  # type: ignore[no-any-unimported]
+        unused_port: Callable[[], int], docker: docker_mod.DockerClient, session_id: str
+    ) -> Iterator[ServerParams]:
     docker.images.pull("memcached:alpine")
     container = docker.containers.run(
         image='memcached:alpine',
@@ -69,7 +89,7 @@ def mcache_server_docker(unused_port, docker, session_id):
         net_settings = container.attrs["NetworkSettings"]
         host = net_settings["IPAddress"]
         port = int(net_settings["Ports"]["11211/tcp"][0]["HostPort"])
-        mcache_params = dict(host=host, port=port)
+        mcache_params: McacheParams = {"host": host, "port": port}
         delay = 0.001
         for _i in range(10):
             try:
@@ -81,10 +101,12 @@ def mcache_server_docker(unused_port, docker, session_id):
                 delay *= 2
         else:
             pytest.fail("Cannot start memcached")
-        ret = {"Id": container.id}
-        ret["host"] = host
-        ret["port"] = port
-        ret["mcache_params"] = mcache_params
+        ret: ServerParams = {
+            "Id": container.id,
+            "host": host,
+            "port": port,
+            "mcache_params": mcache_params
+        }
         time.sleep(0.1)
         yield ret
     finally:
@@ -93,25 +115,25 @@ def mcache_server_docker(unused_port, docker, session_id):
 
 
 @pytest.fixture(scope='session')
-def mcache_server(unused_port, docker, session_id):
+def mcache_server() -> ServerParams:
     return mcache_server_actual("localhost")
 
 
 @pytest.fixture
-def mcache_params(mcache_server):
-    return dict(**mcache_server['mcache_params'])
+def mcache_params(mcache_server: ServerParams) -> McacheParams:
+    return mcache_server["mcache_params"]
 
 
 @pytest.fixture
-async def mcache(mcache_params):
+async def mcache(mcache_params: McacheParams) -> AsyncIterator[aiomcache.Client]:
     client = aiomcache.Client(**mcache_params)
     yield client
     await client.close()
 
 
-@pytest.yield_fixture
-async def mcache_pylibmc(mcache_params):
-    client = aiomcache.Client(
+@pytest.yield_fixture  # type: ignore[misc]
+async def mcache_pylibmc(mcache_params: McacheParams) -> AsyncIterator[aiomcache.FlagClient[Any]]:
+    client = aiomcache.FlagClient(
         get_flag_handler=pylibmc_get_flag_handler,
         set_flag_handler=pylibmc_set_flag_handler,
         **mcache_params)

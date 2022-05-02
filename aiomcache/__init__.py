@@ -9,9 +9,9 @@ Usage example::
     await mc.delete("another_key")
 """
 
-from .client import Client
+from .client import Client, FlagClient
 from .exceptions import ClientException, ValidationException
 
-__all__ = ('Client', 'ClientException', 'ValidationException')
+__all__ = ("Client", "ClientException", "FlagClient", "ValidationException")
 
 __version__ = "0.7.0"
