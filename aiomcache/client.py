@@ -145,15 +145,16 @@ class Client(object):
             raise ClientException('Memcached delete failed', response)
         return response == const.DELETED
 
-    @acquire
     @overload
-    async def get(self, conn: Connection, key: bytes) -> Optional[bytes]:
+    async def get(self, key: bytes) -> Optional[bytes]:
         ...
 
     @overload
-    async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes:
+    async def get(self, key: bytes, default: bytes) -> bytes:
         ...
 
+    # Mypy bug: https://github.com/python/mypy/issues/14040
+    @acquire  # type: ignore[misc]
     async def get(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
     ) -> Optional[bytes]:
