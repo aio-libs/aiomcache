@@ -79,7 +79,7 @@ def mcache_server_actual(host: str, port: int = 11211) -> ServerParams:
 
 @contextlib.contextmanager
 def mcache_server_docker(  # type: ignore[no-any-unimported]
-        unused_port: Callable[[], int], docker: docker_mod.DockerClient, session_id: str
+        unused_port: Callable[[], int], docker: docker_mod.Client, session_id: str
     ) -> Iterator[ServerParams]:
     docker.images.pull("memcached:alpine")
     container = docker.containers.run(
