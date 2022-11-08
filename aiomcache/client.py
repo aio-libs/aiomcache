@@ -20,7 +20,9 @@ _Client = TypeVar("_Client", bound="Client")
 _Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
 
 
-def acquire(func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
+def acquire(
+    func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
+) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
     async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
