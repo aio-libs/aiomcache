@@ -3,7 +3,7 @@ import socket
 import time
 import uuid
 import sys
-from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
+from typing import Any, AsyncIterator, Callable, Iterator
 
 import docker as docker_mod
 import memcache
@@ -11,6 +11,11 @@ import pytest
 
 import aiomcache
 from aiomcache.helpers import pylibmc_get_flag_handler, pylibmc_set_flag_handler
+
+if sys.version_info < (3, 8):
+    from typing_extensions import TypedDict
+else:
+    from typing import TypedDict
 
 if sys.version_info < (3, 11):
     from typing_extensions import NotRequired
