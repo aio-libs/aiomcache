@@ -1,21 +1,31 @@
 import functools
 import re
+import sys
 from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
 
+if sys.version_info >= (3, 10):
+    from typing import Concatenate, ParamSpec
+else:
+    from typing_extensions import Concatenate, ParamSpec
+
 __all__ = ['Client']
 
 _T = TypeVar("_T")
+_P = ParamSpec("_P")
+_Client = TypeVar("_Client", bound="Client")
 _Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
 
 
-def acquire(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
+def acquire(
+    func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
+) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "Client", *args: object, **kwargs: object) -> _T:
+    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -138,14 +148,15 @@ class Client(object):
         return response == const.DELETED
 
     @overload
-    async def get(self, conn: Connection, key: bytes) -> Optional[bytes]:
+    async def get(self, key: bytes) -> Optional[bytes]:
         ...
 
     @overload
-    async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes:
+    async def get(self, key: bytes, default: bytes) -> bytes:
         ...
 
-    @acquire
+    # Mypy bug: https://github.com/python/mypy/issues/14040
+    @acquire  # type: ignore[misc]
     async def get(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
     ) -> Optional[bytes]:
