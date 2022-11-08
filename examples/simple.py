@@ -3,7 +3,7 @@ import asyncio
 import aiomcache
 
 
-async def hello_aiomcache():
+async def hello_aiomcache() -> None:
     mc = aiomcache.Client("127.0.0.1", 11211)
     await mc.set(b"some_key", b"Some value")
     value = await mc.get(b"some_key")
