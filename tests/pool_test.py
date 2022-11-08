@@ -117,8 +117,7 @@ async def test_acquire_task_cancellation(
             client.acquire_wait_release(),
             random.uniform(1, 2)) for x in range(1000)  # noqa: S311
     ]
-    results = await asyncio.gather(
-        *tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks)
     assert client._pool.size() <= pool_size
     assert len(client._pool._in_use) == 0
     assert "foo" in results
