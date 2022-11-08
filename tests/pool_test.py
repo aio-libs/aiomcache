@@ -64,6 +64,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     conn = await pool.acquire()
     assert conn is _conn
     assert pool.size() == 1
+    await pool.clear()
 
 
 @pytest.mark.asyncio
@@ -89,6 +90,7 @@ async def test_acquire_limit_maxsize(mcache_params):
     assert pool.size() == 1
     assert len(pool._in_use) == 0
     assert pool._pool.qsize() == 1
+    await pool.clear()
 
 
 @pytest.mark.asyncio
