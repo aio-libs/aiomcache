@@ -4,14 +4,14 @@ import sys
 from typing import (Any, Awaitable, Callable, Dict, Generic, Literal, Optional, Tuple,
                     TypeVar, Union, overload)
 
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate, ParamSpec
-else:
-    from typing import Concatenate, ParamSpec
-
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
+
+if sys.version_info >= (3, 10):
+    from typing import Concatenate, ParamSpec
+else:
+    from typing_extensions import Concatenate, ParamSpec
 
 __all__ = ['Client']
 
@@ -25,10 +25,12 @@ _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
 _SetFlagHandler = Callable[[_T], Awaitable[Tuple[bytes, int]]]
 
 
-def acquire(func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
+def acquire(
+    func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
+) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "_Client", *args: _P.args, **kwargs: _P.kwargs) -> _T:  # type: ignore[misc]
+    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:  # type: ignore[misc]
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)

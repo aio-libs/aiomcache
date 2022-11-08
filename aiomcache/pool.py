@@ -43,7 +43,7 @@ class MemcachePool:
         conn: Optional[Connection] = None
         while not conn:
             _conn = await self._pool.get()
-            if _conn.reader.at_eof() or _conn.reader.exception():
+            if _conn.reader.at_eof() or _conn.reader.exception() is not None:
                 self._do_close(_conn)
                 conn = await self._create_new_conn()
             else:
@@ -58,7 +58,7 @@ class MemcachePool:
         :param conn: ``namedtuple`` (reader, writer)
         """
         self._in_use.remove(conn)
-        if conn.reader.at_eof() or conn.reader.exception():
+        if conn.reader.at_eof() or conn.reader.exception() is not None:
             self._do_close(conn)
         else:
             self._pool.put_nowait(conn)

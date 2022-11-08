@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from aiomcache.client import acquire, Client
+from aiomcache.client import Client, acquire
 from aiomcache.pool import Connection, MemcachePool
 
 from .conftest import McacheParams
