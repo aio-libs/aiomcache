@@ -59,7 +59,7 @@ def session_id() -> str:
 
 
 @pytest.fixture(scope='session')
-def docker() -> docker_mod.DockerClient:  # type: ignore[no-any-unimported]
+def docker() -> docker_mod.Client:  # type: ignore[no-any-unimported]
     return docker_mod.from_env()
 
 
@@ -131,7 +131,7 @@ async def mcache(mcache_params: McacheParams) -> AsyncIterator[aiomcache.Client]
     await client.close()
 
 
-@pytest.yield_fixture  # type: ignore[misc]
+@pytest.fixture
 async def mcache_pylibmc(mcache_params: McacheParams) -> AsyncIterator[aiomcache.FlagClient[Any]]:
     client = aiomcache.FlagClient(
         get_flag_handler=pylibmc_get_flag_handler,
