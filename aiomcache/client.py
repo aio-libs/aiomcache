@@ -16,13 +16,14 @@ __all__ = ['Client']
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
+_Client = TypeVar("_Client", bound="Client")
 _Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
 
 
-def acquire(func: Callable[Concatenate["Client", Connection, _P], Awaitable[_T]]) -> Callable[Concatenate["Client", _P], Awaitable[_T]]:
+def acquire(func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: "Client", *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -144,6 +145,7 @@ class Client(object):
             raise ClientException('Memcached delete failed', response)
         return response == const.DELETED
 
+    @acquire
     @overload
     async def get(self, conn: Connection, key: bytes) -> Optional[bytes]:
         ...
@@ -152,7 +154,6 @@ class Client(object):
     async def get(self, conn: Connection, key: bytes, default: bytes) -> bytes:
         ...
 
-    @acquire
     async def get(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
     ) -> Optional[bytes]:
