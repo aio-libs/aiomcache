@@ -123,7 +123,6 @@ async def test_acquire_task_cancellation(
     assert len(client._pool._in_use) == 0
     assert "foo" in results
     await client._pool.clear()
-    await asyncio.sleep(0.1)
 
 
 @pytest.mark.asyncio
