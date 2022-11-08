@@ -1,5 +1,5 @@
 docker-py==1.10.6
-mypy==0.931
+mypy==0.990
 pytest==6.2.5
 pytest-asyncio==0.17.2
 pytest-cov==3.0.0
