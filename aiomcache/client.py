@@ -35,8 +35,8 @@ def acquire(
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        # type: ignore[misc]
+    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
+                      **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
