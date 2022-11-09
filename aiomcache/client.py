@@ -298,6 +298,8 @@ class FlagClient(Generic[_T]):
 
         if flags == 0 and self._set_flag_handler and not isinstance(value, bytes):
             value, flags = await self._set_flag_handler(value)
+        elif not isinstance(value, bytes):
+            raise ValidationException('value must be bytes if no flag handler')
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
