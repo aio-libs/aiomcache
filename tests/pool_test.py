@@ -65,6 +65,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     conn = await pool.acquire()
     assert conn is _conn
     assert pool.size() == 1
+    await pool.clear()
 
 
 @pytest.mark.asyncio
@@ -90,6 +91,7 @@ async def test_acquire_limit_maxsize(mcache_params: McacheParams) -> None:
     assert pool.size() == 1
     assert len(pool._in_use) == 0
     assert pool._pool.qsize() == 1
+    await pool.clear()
 
 
 @pytest.mark.asyncio
@@ -114,11 +116,11 @@ async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
             client.acquire_wait_release(),
             random.uniform(1, 2)) for x in range(1000)  # noqa: S311
     ]
-    results = await asyncio.gather(
-        *tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     assert client._pool.size() <= pool_size
     assert len(client._pool._in_use) == 0
     assert "foo" in results
+    await client._pool.clear()
 
 
 @pytest.mark.asyncio
