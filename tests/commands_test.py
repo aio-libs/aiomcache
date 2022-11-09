@@ -1,12 +1,12 @@
 import asyncio
+from typing import Any, Union
 from unittest import mock
 from unittest.mock import MagicMock
-from typing import Any, Union
 
 import pylibmc
 import pytest
 
-from aiomcache import FlagClient, Client
+from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
 
 
@@ -401,10 +401,10 @@ async def test_close(mcache: Client) -> None:
 )
 @pytest.mark.asyncio
 async def test_pylibmc_get_helper(
-    mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
+        mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
+
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
-
     mc_client.set(key, value)
 
     if isinstance(key, str):
@@ -431,7 +431,8 @@ async def test_pylibmc_get_helper(
 )
 @pytest.mark.asyncio
 async def test_pylibmc_set_helper(
-    mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
+        mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
+
     mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
                                                mcache_pylibmc._pool._port)])
 

@@ -1,7 +1,8 @@
 import functools
 import re
 import sys
-from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
+from typing import Any  # pylint: disable=unused-import
+from typing import (Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
                     Union, overload)
 
 from . import constants as const
@@ -35,7 +36,8 @@ def acquire(
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:  # type: ignore[misc]
+    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
+                      **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -114,15 +116,18 @@ class FlagClient(Generic[_T]):
         await self._pool.clear()
 
     @overload
-    async def _multi_get(self, conn: Connection, *keys: bytes, with_cas: Literal[True] = ...) -> _Result[_T, int]:
+    async def _multi_get(self, conn: Connection, *keys: bytes,
+                         with_cas: Literal[True] = ...) -> _Result[_T, int]:
         ...
 
     @overload
-    async def _multi_get(self, conn: Connection, *keys: bytes, with_cas: Literal[False]) -> _Result[_T, None]:
+    async def _multi_get(self, conn: Connection, *keys: bytes,
+                         with_cas: Literal[False]) -> _Result[_T, None]:
         ...
 
     async def _multi_get(  # type: ignore[misc]
-        self, conn: Connection, *keys: bytes, with_cas: bool = True) -> _Result[_T, Optional[int]]:
+        self, conn: Connection, *keys: bytes,
+            with_cas: bool = True) -> _Result[_T, Optional[int]]:
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
@@ -231,7 +236,8 @@ class FlagClient(Generic[_T]):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Union[bytes, _T, None], ...]:
+    async def multi_get(self, conn: Connection, *keys: bytes
+                        ) -> Tuple[Union[bytes, _T, None], ...]:
         """Takes a list of keys and returns a list of values.
 
         :param conn: ``Connection``, is the connection to use
@@ -298,6 +304,8 @@ class FlagClient(Generic[_T]):
 
         if flags == 0 and self._set_flag_handler and not isinstance(value, bytes):
             value, flags = await self._set_flag_handler(value)
+        elif not isinstance(value, bytes):
+            raise ValidationException('value must be bytes if no flag handler')
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
@@ -312,7 +320,8 @@ class FlagClient(Generic[_T]):
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn: Connection, key: bytes, value: Union[bytes, _T], exptime: int = 0) -> bool:
+    async def set(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                  exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -342,10 +351,12 @@ class FlagClient(Generic[_T]):
         :return: ``bool``, True in case of success.
         """
         flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"cas", key, value, flags, exptime, cas=cas_token)
+        return await self._storage_command(conn, b"cas", key, value, flags, exptime,
+                                           cas=cas_token)
 
     @acquire
-    async def add(self, conn: Connection, key: bytes, value: Union[bytes, _T], exptime: int = 0) -> bool:
+    async def add(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                  exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -360,7 +371,8 @@ class FlagClient(Generic[_T]):
         return await self._storage_command(conn, b"add", key, value, flags, exptime)
 
     @acquire
-    async def replace(self, conn: Connection, key: bytes, value: Union[bytes, _T], exptime: int = 0) -> bool:
+    async def replace(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                      exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -375,7 +387,8 @@ class FlagClient(Generic[_T]):
         return await self._storage_command(conn, b"replace", key, value, flags, exptime)
 
     @acquire
-    async def append(self, conn: Connection, key: bytes, value: Union[bytes, _T], exptime: int = 0) -> bool:
+    async def append(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                     exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
         :param conn: ``Connection``, is the connection to use
