@@ -10,7 +10,7 @@ import memcache
 import pytest
 
 import aiomcache
-from aiomcache.helpers import pylibmc_get_flag_handler, pylibmc_set_flag_handler
+from tests.flag_helper import demo_get_flag_handler, demo_set_flag_handler
 
 if sys.version_info < (3, 8):
     from typing_extensions import TypedDict
@@ -137,10 +137,10 @@ async def mcache(mcache_params: McacheParams) -> AsyncIterator[aiomcache.Client]
 
 
 @pytest.fixture
-async def mcache_pylibmc(mcache_params: McacheParams) -> AsyncIterator[aiomcache.FlagClient[Any]]:
+async def mcache_flag_client(mcache_params: McacheParams) -> AsyncIterator[aiomcache.FlagClient[Any]]:
     client = aiomcache.FlagClient(
-        get_flag_handler=pylibmc_get_flag_handler,
-        set_flag_handler=pylibmc_set_flag_handler,
+        get_flag_handler=demo_get_flag_handler,
+        set_flag_handler=demo_set_flag_handler,
         **mcache_params)
     try:
         yield client
