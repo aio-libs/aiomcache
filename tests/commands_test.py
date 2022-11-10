@@ -1,9 +1,9 @@
 import asyncio
+import datetime
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
-import datetime
 import pytest
 
 from aiomcache import Client, FlagClient
@@ -411,4 +411,3 @@ async def test_flag_helper(
     await mcache_flag_client.set(key, value)
     v2 = await mcache_flag_client.get(key)
     assert v2 == value
-

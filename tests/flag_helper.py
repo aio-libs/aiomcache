@@ -7,6 +7,7 @@ from typing import Any, Tuple
 class DemoFlags(IntEnum):
     DEMO_FLAG_PICKLE = 1 << 0
 
+
 # demo/ref flag handler, for more elaborate potential handlers, see:
 # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L640
 async def demo_get_flag_handler(value: bytes, flags: int) -> Any:
