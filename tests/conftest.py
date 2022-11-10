@@ -8,9 +8,9 @@ from typing import Any, AsyncIterator, Callable, Iterator
 import docker as docker_mod
 import memcache
 import pytest
-from tests.flag_helper import demo_get_flag_handler, demo_set_flag_handler
 
 import aiomcache
+from .flag_helper import demo_get_flag_handler, demo_set_flag_handler
 
 if sys.version_info < (3, 8):
     from typing_extensions import TypedDict
