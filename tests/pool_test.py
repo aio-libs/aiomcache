@@ -22,6 +22,7 @@ async def test_pool_acquire_release(mcache_params: McacheParams) -> None:
     assert isinstance(conn.reader, asyncio.StreamReader)
     assert isinstance(conn.writer, asyncio.StreamWriter)
     pool.release(conn)
+    await pool.clear()
 
 
 @pytest.mark.asyncio
@@ -37,6 +38,8 @@ async def test_pool_acquire_release2(mcache_params: McacheParams) -> None:
     conn = await pool.acquire()
     assert isinstance(conn.reader, asyncio.StreamReader)
     assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+    await pool.clear()
 
 
 @pytest.mark.asyncio
@@ -65,6 +68,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     conn = await pool.acquire()
     assert conn is _conn
     assert pool.size() == 1
+    pool.release(conn)
     await pool.clear()
 
 

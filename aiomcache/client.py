@@ -1,8 +1,7 @@
 import functools
 import re
 import sys
-from typing import Any  # pylint: disable=unused-import
-from typing import (Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
+from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
                     Union, overload)
 
 from . import constants as const

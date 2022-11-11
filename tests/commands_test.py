@@ -1,9 +1,9 @@
 import asyncio
-from typing import Any, Union
+import datetime
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
-import pylibmc
 import pytest
 
 from aiomcache import Client, FlagClient
@@ -387,62 +387,27 @@ async def test_close(mcache: Client) -> None:
 
 
 @pytest.mark.parametrize(
-    ('key', 'value'),
+    'value',
     [
-        ['key', 'key'],
-        [b'bkey', b'bkey'],
-        ['False', False],
-        ['1', 1],
-        ['None', None],
-        ['0.5', 0.5],
-        ['[1,2,3]', [1, 2, 3]],
-        ['(1,2,3)', tuple([1, 2, 3])]
+        'key',
+        b'bkey',
+        False,
+        1,
+        None,
+        0.5,
+        [1, 2, 3],
+        tuple([1, 2, 3]),
+        [datetime.date(2015, 12, 28)],
+        bytes("!@#", "utf-8"),
+        bytes("안녕하세요", "utf-8"),
     ]
 )
 @pytest.mark.asyncio
-async def test_pylibmc_get_helper(
-        mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
+async def test_flag_helper(
+        mcache_flag_client: FlagClient[Any], value: object) -> None:
 
-    mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
-                                               mcache_pylibmc._pool._port)])
-    mc_client.set(key, value)
+    key = b'key:test_flag_helper'
 
-    if isinstance(key, str):
-        # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
-        # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
-        key = key.encode('utf-8')
-
-    v2 = await mcache_pylibmc.get(key)
-    assert v2 == value
-
-
-@pytest.mark.parametrize(
-    ('key', 'value'),
-    [
-        ['key', 'key'],
-        [b'bkey', b'bkey'],
-        ['False', False],
-        ['1', 1],
-        ['None', None],
-        ['0.5', 0.5],
-        ['[1,2,3]', [1, 2, 3]],
-        ['(1,2,3)', tuple([1, 2, 3])],
-    ]
-)
-@pytest.mark.asyncio
-async def test_pylibmc_set_helper(
-        mcache_pylibmc: FlagClient[Any], key: Union[str, bytes], value: object) -> None:
-
-    mc_client = pylibmc.Client(['{}:{}'.format(mcache_pylibmc._pool._host,
-                                               mcache_pylibmc._pool._port)])
-
-    orig_key = key
-    if isinstance(key, str):
-        # pylibmc keys are encoded in utf-8 in _key_normalized_obj:
-        # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L2498
-        key = key.encode('utf-8')
-
-    await mcache_pylibmc.set(key, value)
-
-    v2 = mc_client.get(orig_key)
+    await mcache_flag_client.set(key, value)
+    v2 = await mcache_flag_client.get(key)
     assert v2 == value
