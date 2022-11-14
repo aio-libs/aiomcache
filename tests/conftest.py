@@ -10,7 +10,7 @@ import memcache
 import pytest
 
 import aiomcache
-from .flag_helper import demo_get_flag_handler, demo_set_flag_handler
+from .flag_helper import FlagHelperDemo
 
 if sys.version_info < (3, 8):
     from typing_extensions import TypedDict
@@ -136,12 +136,22 @@ async def mcache(mcache_params: McacheParams) -> AsyncIterator[aiomcache.Client]
     await client.close()
 
 
+test_only_demo_flag_helper = FlagHelperDemo()
+
+
 @pytest.fixture
-async def mcache_flag_client(mcache_params: McacheParams
+async def demo_flag_helper() -> FlagHelperDemo:
+    return test_only_demo_flag_helper
+
+
+@pytest.fixture
+async def mcache_flag_client(mcache_params: McacheParams,
+                             demo_flag_helper: FlagHelperDemo
                              ) -> AsyncIterator[aiomcache.FlagClient[Any]]:
+
     client = aiomcache.FlagClient(
-        get_flag_handler=demo_get_flag_handler,
-        set_flag_handler=demo_set_flag_handler,
+        get_flag_handler=demo_flag_helper.demo_get_flag_handler,
+        set_flag_handler=demo_flag_helper.demo_set_flag_handler,
         **mcache_params)
     try:
         yield client
