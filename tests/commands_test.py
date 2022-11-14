@@ -8,6 +8,7 @@ import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
+from .flag_helper import FlagHelperDemo
 
 
 @pytest.mark.parametrize("key", (
@@ -405,9 +406,52 @@ async def test_close(mcache: Client) -> None:
 @pytest.mark.asyncio
 async def test_flag_helper(
         mcache_flag_client: FlagClient[Any], value: object) -> None:
-
     key = b'key:test_flag_helper'
 
     await mcache_flag_client.set(key, value)
     v2 = await mcache_flag_client.get(key)
     assert v2 == value
+
+
+@pytest.mark.asyncio
+async def test_objects_not_supported_without_flag_handler(mcache: Client) -> None:
+    key = b'key:test_objects_not_supported_without_flag_handler'
+
+    date_value = datetime.date(2015, 12, 28)
+
+    with pytest.raises(ValidationException):
+        await mcache.set(key, date_value)  # type: ignore[arg-type]
+
+    result = await mcache.get(key)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_flag_handler_invoked_only_when_expected(
+        mcache_flag_client: FlagClient[Any], demo_flag_helper: FlagHelperDemo) -> None:
+    key = b'key:test_flag_handler_invoked_only_when_expected'
+
+    orig_get_count = demo_flag_helper.get_invocation_count
+    orig_set_count = demo_flag_helper.set_invocation_count
+
+    # should be invoked on non-byte values
+
+    date_value = datetime.date(2015, 12, 28)
+
+    await mcache_flag_client.set(key, date_value)
+    v2 = await mcache_flag_client.get(key)
+    assert v2 == date_value
+
+    assert orig_get_count + 1 == demo_flag_helper.get_invocation_count
+    assert orig_set_count + 1 == demo_flag_helper.set_invocation_count
+
+    # should not be invoked on byte values
+
+    byte_value = bytes("안녕하세요", "utf-8")
+
+    await mcache_flag_client.set(key, byte_value)
+    v3 = await mcache_flag_client.get(key)
+    assert v3 == byte_value
+
+    assert orig_get_count + 1 == demo_flag_helper.get_invocation_count
+    assert orig_set_count + 1 == demo_flag_helper.set_invocation_count

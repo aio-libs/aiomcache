@@ -182,7 +182,6 @@ class FlagClient(Generic[_T]):
     async def delete(self, conn: Connection, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: is the key to delete.
         :return: True if case values was deleted or False to indicate
         that the item with this key was not found.
@@ -212,7 +211,6 @@ class FlagClient(Generic[_T]):
     ) -> Union[bytes, _T, _U, None]:
         """Gets a single value from the server.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
@@ -226,7 +224,6 @@ class FlagClient(Generic[_T]):
     ) -> Tuple[Union[bytes, _T, None], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key for the item being fetched
         :param default: default value if there is no value.
         :return: ``bytes``, ``bytes tuple with the value and the cas
@@ -239,7 +236,6 @@ class FlagClient(Generic[_T]):
                         ) -> Tuple[Union[bytes, _T, None], ...]:
         """Takes a list of keys and returns a list of values.
 
-        :param conn: ``Connection``, is the connection to use
         :param keys: ``list`` keys for the item being fetched.
         :return: ``list`` of values for the specified keys.
         :raises:``ValidationException``, ``ClientException``,
@@ -281,12 +277,12 @@ class FlagClient(Generic[_T]):
         return result
 
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
-                               value: Union[bytes, _T], flags: int = 0, exptime: int = 0,
+                               value: Union[bytes, _T], exptime: int = 0,
                                cas: Optional[int] = None) -> bool:
-        # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
+        # req  - set <key> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
-        # req  - set <key> <flags> <exptime> <bytes> <cas> [noreply]\r\n
+        # req  - set <key> <exptime> <bytes> <cas> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
 
@@ -301,10 +297,15 @@ class FlagClient(Generic[_T]):
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
 
-        if flags == 0 and self._set_flag_handler and not isinstance(value, bytes):
+        # will be assigned by the flag handler if applicable
+        flags = 0
+
+        if not isinstance(value, bytes):
+            # flag handler only invoked on non-byte values,
+            # consistent with only being invoked on non-zero flags on retrieval
+            if self._set_flag_handler is None:
+                raise ValidationException("flag handler must be set for non-byte values")
             value, flags = await self._set_flag_handler(value)
-        elif not isinstance(value, bytes):
-            raise ValidationException('value must be bytes if no flag handler')
 
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
@@ -330,17 +331,15 @@ class FlagClient(Generic[_T]):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"set", key, value, flags, exptime)
+        return await self._storage_command(conn, b"set", key, value, exptime)
 
     @acquire
     async def cas(self, conn: Connection, key: bytes, value: Union[bytes, _T], cas_token: int,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
-        only if value hasn't change from first retrieval
+        only if value hasn't changed from first retrieval
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
         :param exptime: ``int``, is expiration time. If it's 0, the
@@ -349,8 +348,7 @@ class FlagClient(Generic[_T]):
             ``gets``
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"cas", key, value, flags, exptime,
+        return await self._storage_command(conn, b"cas", key, value, exptime,
                                            cas=cas_token)
 
     @acquire
@@ -359,15 +357,13 @@ class FlagClient(Generic[_T]):
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"add", key, value, flags, exptime)
+        return await self._storage_command(conn, b"add", key, value, exptime)
 
     @acquire
     async def replace(self, conn: Connection, key: bytes, value: Union[bytes, _T],
@@ -375,30 +371,26 @@ class FlagClient(Generic[_T]):
         """Store this data, but only if the server *does*
         already hold data for this key.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"replace", key, value, flags, exptime)
+        return await self._storage_command(conn, b"replace", key, value, exptime)
 
     @acquire
     async def append(self, conn: Connection, key: bytes, value: Union[bytes, _T],
                      exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
         :param exptime: ``int`` is expiration time. If it's 0, the
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"append", key, value, flags, exptime)
+        return await self._storage_command(conn, b"append", key, value, exptime)
 
     @acquire
     async def prepend(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
@@ -410,8 +402,7 @@ class FlagClient(Generic[_T]):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"prepend", key, value, flags, exptime)
+        return await self._storage_command(conn, b"prepend", key, value, exptime)
 
     async def _incr_decr(
         self, conn: Connection, command: bytes, key: bytes, delta: int
@@ -430,7 +421,6 @@ class FlagClient(Generic[_T]):
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param increment: ``int``, is the amount by which the client
@@ -448,7 +438,6 @@ class FlagClient(Generic[_T]):
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key of the item the client wishes
         to change
         :param decrement: ``int``, is the amount by which the client
@@ -465,7 +454,6 @@ class FlagClient(Generic[_T]):
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
-        :param conn: ``Connection``, is the connection to use
         :param key: ``bytes``, is the key to update expiration time
         :param exptime: ``int``, is expiration time. This replaces the existing
         expiration time.
@@ -484,7 +472,6 @@ class FlagClient(Generic[_T]):
     async def version(self, conn: Connection) -> bytes:
         """Current version of the server.
 
-        :param conn: ``Connection``, is the connection to use
         :return: ``bytes``, memcached version for current the server.
         """
 

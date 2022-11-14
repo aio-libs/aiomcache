@@ -24,3 +24,7 @@ The API looks very similar to the other memcache clients:
         await mc.delete(b"another_key")
 
     asyncio.run(hello_aiomcache())
+
+
+Version <TBD> introduces support for registering callbacks to
+set or process flags.  See `examples/simple_with_flag_handler.py`
