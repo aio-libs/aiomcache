@@ -145,9 +145,9 @@ async def demo_flag_helper() -> FlagHelperDemo:
 
 
 @pytest.fixture
-async def mcache_flag_client(mcache_params: McacheParams,
-                             demo_flag_helper: FlagHelperDemo
-                             ) -> AsyncIterator[aiomcache.FlagClient[Any]]:
+async def mcache_flag_client(
+    mcache_params: McacheParams, demo_flag_helper: FlagHelperDemo
+ ) -> AsyncIterator[aiomcache.FlagClient[Any]]:
 
     client = aiomcache.FlagClient(
         get_flag_handler=demo_flag_helper.demo_get_flag_handler,
