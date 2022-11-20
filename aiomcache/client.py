@@ -149,7 +149,7 @@ class FlagClient(Generic[_T]):
         while line != b'END\r\n':
             terms = line.split()
 
-            if terms[0] == b'VALUE':  # exists
+            if terms and terms[0] == b"VALUE":  # exists
                 key = terms[1]
                 flags = int(terms[2])
                 length = int(terms[3])
