@@ -388,10 +388,10 @@ async def test_close(mcache: Client) -> None:
 
 
 @pytest.mark.parametrize(
-    'value',
+    "value",
     [
-        'key',
-        b'bkey',
+        "key",
+        b"bkey",
         False,
         1,
         None,
@@ -406,7 +406,7 @@ async def test_close(mcache: Client) -> None:
 @pytest.mark.asyncio
 async def test_flag_helper(
         mcache_flag_client: FlagClient[Any], value: object) -> None:
-    key = b'key:test_flag_helper'
+    key = b"key:test_flag_helper"
 
     await mcache_flag_client.set(key, value)
     v2 = await mcache_flag_client.get(key)
@@ -415,7 +415,7 @@ async def test_flag_helper(
 
 @pytest.mark.asyncio
 async def test_objects_not_supported_without_flag_handler(mcache: Client) -> None:
-    key = b'key:test_objects_not_supported_without_flag_handler'
+    key = b"key:test_objects_not_supported_without_flag_handler"
 
     date_value = datetime.date(2015, 12, 28)
 
@@ -429,7 +429,7 @@ async def test_objects_not_supported_without_flag_handler(mcache: Client) -> Non
 @pytest.mark.asyncio
 async def test_flag_handler_invoked_only_when_expected(
         mcache_flag_client: FlagClient[Any], demo_flag_helper: FlagHelperDemo) -> None:
-    key = b'key:test_flag_handler_invoked_only_when_expected'
+    key = b"key:test_flag_handler_invoked_only_when_expected"
 
     orig_get_count = demo_flag_helper.get_invocation_count
     orig_set_count = demo_flag_helper.set_invocation_count
