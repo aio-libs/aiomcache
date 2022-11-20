@@ -26,5 +26,5 @@ The API looks very similar to the other memcache clients:
     asyncio.run(hello_aiomcache())
 
 
-Version <TBD> introduces support for registering callbacks to
+Version 0.8 introduces `FlagClient` which allows registering callbacks to
 set or process flags.  See `examples/simple_with_flag_handler.py`
