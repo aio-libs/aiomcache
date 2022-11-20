@@ -160,7 +160,7 @@ class FlagClient(Generic[_T]):
 
                 if flags:
                     if not self._get_flag_handler:
-                        raise ClientException('received flags without handler')
+                        raise ClientException("received flags without handler")
 
                     val: Union[bytes, _T] = await self._get_flag_handler(val_bytes, flags)
                 else:
@@ -232,8 +232,9 @@ class FlagClient(Generic[_T]):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn: Connection, *keys: bytes
-                        ) -> Tuple[Union[bytes, _T, None], ...]:
+    async def multi_get(
+      self, conn: Connection, *keys: bytes
+    ) -> Tuple[Union[bytes, _T, None], ...]:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -279,10 +280,10 @@ class FlagClient(Generic[_T]):
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
                                value: Union[bytes, _T], exptime: int = 0,
                                cas: Optional[int] = None) -> bool:
-        # req  - set <key> <exptime> <bytes> [noreply]\r\n
+        # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
-        # req  - set <key> <exptime> <bytes> <cas> [noreply]\r\n
+        # req  - set <key> <flags> <exptime> <bytes> <cas> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
 
@@ -297,9 +298,7 @@ class FlagClient(Generic[_T]):
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
 
-        # will be assigned by the flag handler if applicable
         flags = 0
-
         if not isinstance(value, bytes):
             # flag handler only invoked on non-byte values,
             # consistent with only being invoked on non-zero flags on retrieval
