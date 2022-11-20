@@ -1,11 +1,17 @@
 import functools
 import re
 import sys
-from typing import Awaitable, Callable, Dict, Optional, Tuple, TypeVar, overload
+from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
+                    Union, overload)
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
     from typing import Concatenate, ParamSpec
@@ -14,10 +20,14 @@ else:
 
 __all__ = ['Client']
 
-_T = TypeVar("_T")
 _P = ParamSpec("_P")
-_Client = TypeVar("_Client", bound="Client")
-_Result = Tuple[Dict[bytes, bytes], Dict[bytes, Optional[int]]]
+_T = TypeVar("_T")
+_U = TypeVar("_U")
+_Client = TypeVar("_Client", bound="FlagClient[Any]")
+_Result = Tuple[Dict[bytes, Union[bytes, _T]], Dict[bytes, _U]]
+
+_GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
+_SetFlagHandler = Callable[[_T], Awaitable[Tuple[bytes, int]]]
 
 
 def acquire(
@@ -25,7 +35,8 @@ def acquire(
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
+                      **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
@@ -38,14 +49,33 @@ def acquire(
     return wrapper
 
 
-class Client(object):
-
+class FlagClient(Generic[_T]):
     def __init__(self, host: str, port: int = 11211, *,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None):
+                 pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
+                 set_flag_handler: Optional[_SetFlagHandler[_T]] = None):
+        """
+        Creates new Client instance.
+
+        :param host: memcached host
+        :param port: memcached port
+        :param pool_size: max connection pool size
+        :param pool_minsize: min connection pool size
+        :param get_flag_handler: async method to call to convert flagged
+            values. Method takes tuple: (value, flags) and should return
+            processed value or raise ClientException if not supported.
+        :param set_flag_handler: async method to call to convert non bytes
+            value to flagged value. Method takes value and must return tuple:
+            (value, flags).
+        """
         if not pool_minsize:
             pool_minsize = pool_size
+
         self._pool = MemcachePool(
             host, port, minsize=pool_minsize, maxsize=pool_size)
+
+        self._get_flag_handler = get_flag_handler
+        self._set_flag_handler = set_flag_handler
 
     # key may be anything except whitespace and control chars, upto 250 characters.
     # Must be str for unicode-aware regex.
@@ -84,7 +114,19 @@ class Client(object):
         """Closes the sockets if its open."""
         await self._pool.clear()
 
-    async def _multi_get(self, conn: Connection, *keys: bytes, with_cas: bool = True) -> _Result:
+    @overload
+    async def _multi_get(self, conn: Connection, *keys: bytes,
+                         with_cas: Literal[True] = ...) -> _Result[_T, int]:
+        ...
+
+    @overload
+    async def _multi_get(self, conn: Connection, *keys: bytes,
+                         with_cas: Literal[False]) -> _Result[_T, None]:
+        ...
+
+    async def _multi_get(  # type: ignore[misc]
+        self, conn: Connection, *keys: bytes,
+            with_cas: bool = True) -> _Result[_T, Optional[int]]:
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
@@ -112,12 +154,17 @@ class Client(object):
                 flags = int(terms[2])
                 length = int(terms[3])
 
-                if flags != 0:
-                    raise ClientException('received non zero flags')
-
-                val = (await conn.reader.readexactly(length+2))[:-2]
+                val_bytes = (await conn.reader.readexactly(length+2))[:-2]
                 if key in received:
                     raise ClientException('duplicate results from server')
+
+                if flags:
+                    if not self._get_flag_handler:
+                        raise ClientException("received flags without handler")
+
+                    val: Union[bytes, _T] = await self._get_flag_handler(val_bytes, flags)
+                else:
+                    val = val_bytes
 
                 received[key] = val
                 cas_tokens[key] = int(terms[4]) if with_cas else None
@@ -128,6 +175,7 @@ class Client(object):
 
         if len(received) > len(keys):
             raise ClientException('received too many responses')
+
         return received, cas_tokens
 
     @acquire
@@ -145,21 +193,22 @@ class Client(object):
 
         if response not in (const.DELETED, const.NOT_FOUND):
             raise ClientException('Memcached delete failed', response)
+
         return response == const.DELETED
 
     @overload
-    async def get(self, key: bytes) -> Optional[bytes]:
+    async def get(self, key: bytes, default: None = ...) -> Union[bytes, _T, None]:
         ...
 
     @overload
-    async def get(self, key: bytes, default: bytes) -> bytes:
+    async def get(self, key: bytes, default: _U) -> Union[bytes, _T, _U]:
         ...
 
-    # Mypy bug: https://github.com/python/mypy/issues/14040
+    # Mypy bug: https://github.com/python/mypy/issues/12716
     @acquire  # type: ignore[misc]
     async def get(
-        self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Optional[bytes]:
+        self, conn: Connection, key: bytes, default: Optional[_U] = None
+    ) -> Union[bytes, _T, _U, None]:
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -172,7 +221,7 @@ class Client(object):
     @acquire
     async def gets(
         self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Tuple[Optional[bytes], Optional[int]]:
+    ) -> Tuple[Union[bytes, _T, None], Optional[int]]:
         """Gets a single value from the server together with the cas token.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -183,7 +232,9 @@ class Client(object):
         return values.get(key, default), cas_tokens.get(key)
 
     @acquire
-    async def multi_get(self, conn: Connection, *keys: bytes) -> Tuple[Optional[bytes], ...]:
+    async def multi_get(
+        self, conn: Connection, *keys: bytes
+    ) -> Tuple[Union[bytes, _T, None], ...]:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -227,8 +278,8 @@ class Client(object):
         return result
 
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
-                               value: bytes, flags: int = 0, exptime: int = 0,
-                               cas: Optional[bytes] = None) -> bool:
+                               value: Union[bytes, _T], exptime: int = 0,
+                               cas: Optional[int] = None) -> bool:
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
@@ -247,6 +298,14 @@ class Client(object):
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
 
+        flags = 0
+        if not isinstance(value, bytes):
+            # flag handler only invoked on non-byte values,
+            # consistent with only being invoked on non-zero flags on retrieval
+            if self._set_flag_handler is None:
+                raise ValidationException("flag handler must be set for non-byte values")
+            value, flags = await self._set_flag_handler(value)
+
         args = [str(a).encode('utf-8') for a in (flags, exptime, len(value))]
         _cmd = b' '.join([command, key] + args)
         if cas:
@@ -260,7 +319,8 @@ class Client(object):
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def set(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                  exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
@@ -270,15 +330,14 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"set", key, value, flags, exptime)
+        return await self._storage_command(conn, b"set", key, value, exptime)
 
     @acquire
-    async def cas(self, conn: Connection, key: bytes, value: bytes, cas_token: bytes,
+    async def cas(self, conn: Connection, key: bytes, value: Union[bytes, _T], cas_token: int,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
-        only if value hasn't change from first retrieval
+        only if value hasn't changed from first retrieval
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
@@ -288,11 +347,12 @@ class Client(object):
             ``gets``
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"cas", key, value, flags, exptime, cas=cas_token)
+        return await self._storage_command(conn, b"cas", key, value, exptime,
+                                           cas=cas_token)
 
     @acquire
-    async def add(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def add(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                  exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
@@ -302,11 +362,11 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"add", key, value, flags, exptime)
+        return await self._storage_command(conn, b"add", key, value, exptime)
 
     @acquire
-    async def replace(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def replace(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                      exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
@@ -316,11 +376,11 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"replace", key, value, flags, exptime)
+        return await self._storage_command(conn, b"replace", key, value, exptime)
 
     @acquire
-    async def append(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
+    async def append(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+                     exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
         :param key: ``bytes``, is the key of the item.
@@ -329,8 +389,7 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"append", key, value, flags, exptime)
+        return await self._storage_command(conn, b"append", key, value, exptime)
 
     @acquire
     async def prepend(self, conn: Connection, key: bytes, value: bytes, exptime: int = 0) -> bool:
@@ -342,8 +401,7 @@ class Client(object):
         item never expires.
         :return: ``bool``, True in case of success.
         """
-        flags = 0  # TODO: fix when exception removed
-        return await self._storage_command(conn, b"prepend", key, value, flags, exptime)
+        return await self._storage_command(conn, b"prepend", key, value, exptime)
 
     async def _incr_decr(
         self, conn: Connection, command: bytes, key: bytes, delta: int
@@ -431,3 +489,10 @@ class Client(object):
 
         if const.OK != response:
             raise ClientException('Memcached flush_all failed', response)
+
+
+class Client(FlagClient[bytes]):
+    def __init__(self, host: str, port: int = 11211, *,
+                 pool_size: int = 2, pool_minsize: Optional[int] = None):
+        super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
+                         get_flag_handler=None, set_flag_handler=None)

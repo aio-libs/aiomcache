@@ -30,13 +30,12 @@ jobs:
         path: ~/.cache/pip
         restore-keys: |
             pip-lint-
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: sudo apt-get install -y libmemcached-dev
+    - name: Install python dependencies
       uses: py-actions/py-dependency-install@v2
       with:
         path: requirements.txt
-    - name: Install itself
-      run: |
-        pip install .
     - name: Mypy
       run: |
         mypy
@@ -65,12 +64,13 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: sudo apt-get install -y libmemcached-dev
+    - name: Install python dependencies
       run: |
         pip install --upgrade pip
         pip install -U setuptools
         pip install -r requirements.txt
-        pip install -e .
         pip install codecov
     - name: Run memcached service
       uses: jkeys089/actions-memcached@master

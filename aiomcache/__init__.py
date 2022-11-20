@@ -3,15 +3,15 @@
 Usage example::
 
     import aiomcache
-    mc = aiomcache.Client("127.0.0.1", 11211, timeout=1, connect_timeout=5)
+    mc = aiomcache.Client("127.0.0.1", 11211)
     await mc.set("some_key", "Some value")
     value = await mc.get("some_key")
     await mc.delete("another_key")
 """
 
-from .client import Client
+from .client import Client, FlagClient
 from .exceptions import ClientException, ValidationException
 
-__all__ = ('Client', 'ClientException', 'ValidationException')
+__all__ = ("Client", "ClientException", "FlagClient", "ValidationException")
 
 __version__ = "0.7.0"

@@ -25,3 +25,4 @@ docs/_build/
 build
 .cache
 .python-version
+.pytest_cache/
