@@ -233,7 +233,7 @@ class FlagClient(Generic[_T]):
 
     @acquire
     async def multi_get(
-      self, conn: Connection, *keys: bytes
+        self, conn: Connection, *keys: bytes
     ) -> Tuple[Union[bytes, _T, None], ...]:
         """Takes a list of keys and returns a list of values.
 
