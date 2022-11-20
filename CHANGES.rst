@@ -4,9 +4,9 @@ CHANGES
 
 .. towncrier release notes start
 
-0.7.1 (XXXX-XX-XX)
+0.8.0 (XXXX-XX-XX)
 ==================
-- Add get flag support
+- Add ``FlagClient`` to support memcached flags.
 
 0.7.0 (2022-01-20)
 =====================
