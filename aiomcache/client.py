@@ -215,7 +215,7 @@ class FlagClient(Generic[_T]):
         :param default: default value if there is no value.
         :return: ``bytes``, is the data for this specified key.
         """
-        values, _ = await self._multi_get(conn, key)
+        values, _ = await self._multi_get(conn, key, with_cas=False)
         return values.get(key, default)
 
     @acquire
