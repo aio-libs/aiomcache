@@ -4,9 +4,12 @@ CHANGES
 
 .. towncrier release notes start
 
-0.8.0 (XXXX-XX-XX)
+0.8.0 (2022-12-11)
 ==================
 - Add ``FlagClient`` to support memcached flags.
+- Fix type annotations for ``@acquire``.
+- Fix rare exception caused by memcached server dying in middle of operation.
+- Fix get method to not use CAS.
 
 0.7.0 (2022-01-20)
 =====================
