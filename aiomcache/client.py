@@ -1,6 +1,7 @@
 import functools
 import re
 import sys
+from ssl import SSLContext
 from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
                     Union, overload)
 
@@ -52,6 +53,8 @@ def acquire(
 class FlagClient(Generic[_T]):
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 ssl: Union[bool, SSLContext] = False,
+                 ssl_handshake_timeout: Union[float, None] = None,
                  get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
                  set_flag_handler: Optional[_SetFlagHandler[_T]] = None):
         """
@@ -61,6 +64,12 @@ class FlagClient(Generic[_T]):
         :param port: memcached port
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
+        :param ssl: whether to use TLS against the memcache server. If ssl
+            is a ssl.SSLContext object, this context is used to create the
+            transport; if ssl is True, a default context returned from
+            ssl.create_default_context() is used
+        :param ssl_handshake_timeout: time in seconds to wait for the TLS
+            handshake to complete, if using TLS
         :param get_flag_handler: async method to call to convert flagged
             values. Method takes tuple: (value, flags) and should return
             processed value or raise ClientException if not supported.
@@ -72,7 +81,8 @@ class FlagClient(Generic[_T]):
             pool_minsize = pool_size
 
         self._pool = MemcachePool(
-            host, port, minsize=pool_minsize, maxsize=pool_size)
+            host, port, minsize=pool_minsize, maxsize=pool_size, ssl=ssl,
+            ssl_handshake_timeout=ssl_handshake_timeout)
 
         self._get_flag_handler = get_flag_handler
         self._set_flag_handler = set_flag_handler
@@ -493,6 +503,9 @@ class FlagClient(Generic[_T]):
 
 class Client(FlagClient[bytes]):
     def __init__(self, host: str, port: int = 11211, *,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None):
+                 pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 ssl: Union[bool, SSLContext] = False,
+                 ssl_handshake_timeout: Union[float, None] = None):
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
+                         ssl=ssl, ssl_handshake_timeout=ssl_handshake_timeout,
                          get_flag_handler=None, set_flag_handler=None)
