@@ -12,8 +12,8 @@ class Connection(NamedTuple):
 
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
-                 ssl: Union[bool, SSLContext] = False,
-                 ssl_handshake_timeout: Union[float, None] = None):
+                 ssl: Optional[Union[bool, SSLContext]] = None,
+                 ssl_handshake_timeout: Optional[float] = None):
         self._host = host
         self._port = port
         self._minsize = minsize
