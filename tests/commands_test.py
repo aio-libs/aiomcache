@@ -19,7 +19,6 @@ from .flag_helper import FlagHelperDemo
     bytes("こんにちは", "utf-8"),
     bytes("안녕하세요", "utf-8"),
 ))
-@pytest.mark.asyncio
 async def test_valid_key(mcache: Client, key: bytes) -> None:
     assert mcache._validate_key(key) == key
 
@@ -41,13 +40,11 @@ async def test_valid_key(mcache: Client, key: bytes) -> None:
     "\u0080".encode(),
     "\u009F".encode(),
 ))
-@pytest.mark.asyncio
 async def test_invalid_key(mcache: Client, key: bytes) -> None:
     with pytest.raises(ValidationException, match="invalid key"):
         mcache._validate_key(key)
 
 
-@pytest.mark.asyncio
 async def test_version(mcache: Client) -> None:
     version = await mcache.version()
     stats = await mcache.stats()
@@ -64,7 +61,6 @@ async def test_version(mcache: Client) -> None:
             await mcache.version()
 
 
-@pytest.mark.asyncio
 async def test_flush_all(mcache: Client) -> None:
     key, value = b'key:flush_all', b'flush_all_value'
     await mcache.set(key, value)
@@ -85,7 +81,6 @@ async def test_flush_all(mcache: Client) -> None:
             await mcache.flush_all()
 
 
-@pytest.mark.asyncio
 async def test_set_get(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
@@ -104,7 +99,6 @@ async def test_set_get(mcache: Client) -> None:
             await mcache.set(key, value)
 
 
-@pytest.mark.asyncio
 async def test_gets(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
@@ -122,7 +116,6 @@ async def test_gets(mcache: Client) -> None:
     assert cas is None
 
 
-@pytest.mark.asyncio
 async def test_multi_get(mcache: Client) -> None:
     key1, value1 = b'key:multi_get:1', b'1'
     key2, value2 = b'key:multi_get:2', b'2'
@@ -137,7 +130,6 @@ async def test_multi_get(mcache: Client) -> None:
     assert test_value == ()
 
 
-@pytest.mark.asyncio
 async def test_multi_get_doubling_keys(mcache: Client) -> None:
     key, value = b'key:multi_get:3', b'1'
     await mcache.set(key, value)
@@ -146,7 +138,6 @@ async def test_multi_get_doubling_keys(mcache: Client) -> None:
         await mcache.multi_get(key, key)
 
 
-@pytest.mark.asyncio
 async def test_set_expire(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     await mcache.set(key, value, exptime=1)
@@ -159,7 +150,6 @@ async def test_set_expire(mcache: Client) -> None:
     assert test_value is None
 
 
-@pytest.mark.asyncio
 async def test_set_errors(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     await mcache.set(key, value, exptime=1)
@@ -171,7 +161,6 @@ async def test_set_errors(mcache: Client) -> None:
         await mcache.set(key, value, exptime=3.14)  # type: ignore[arg-type]
 
 
-@pytest.mark.asyncio
 async def test_gets_cas(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     await mcache.set(key, value)
@@ -187,14 +176,12 @@ async def test_gets_cas(mcache: Client) -> None:
     assert stored is False
 
 
-@pytest.mark.asyncio
 async def test_cas_missing(mcache: Client) -> None:
     key, value = b'key:set', b'1'
     stored = await mcache.cas(key, value, 123)
     assert stored is False
 
 
-@pytest.mark.asyncio
 async def test_add(mcache: Client) -> None:
     key, value = b'key:add', b'1'
     await mcache.set(key, value)
@@ -209,7 +196,6 @@ async def test_add(mcache: Client) -> None:
     assert test_value3 == b"2"
 
 
-@pytest.mark.asyncio
 async def test_replace(mcache: Client) -> None:
     key, value = b'key:replace', b'1'
     await mcache.set(key, value)
@@ -227,7 +213,6 @@ async def test_replace(mcache: Client) -> None:
     assert test_value4 is None
 
 
-@pytest.mark.asyncio
 async def test_append(mcache: Client) -> None:
     key, value = b'key:append', b'1'
     await mcache.set(key, value)
@@ -246,7 +231,6 @@ async def test_append(mcache: Client) -> None:
     assert test_value4 is None
 
 
-@pytest.mark.asyncio
 async def test_prepend(mcache: Client) -> None:
     key, value = b'key:prepend', b'1'
     await mcache.set(key, value)
@@ -265,7 +249,6 @@ async def test_prepend(mcache: Client) -> None:
     assert test_value4 is None
 
 
-@pytest.mark.asyncio
 async def test_delete(mcache: Client) -> None:
     key, value = b'key:delete', b'value'
     await mcache.set(key, value)
@@ -289,13 +272,11 @@ async def test_delete(mcache: Client) -> None:
             await mcache.delete(key)
 
 
-@pytest.mark.asyncio
 async def test_delete_key_not_exists(mcache: Client) -> None:
     is_deleted = await mcache.delete(b"not:key")
     assert not is_deleted
 
 
-@pytest.mark.asyncio
 async def test_incr(mcache: Client) -> None:
     key, value = b'key:incr:1', b'1'
     await mcache.set(key, value)
@@ -308,7 +289,6 @@ async def test_incr(mcache: Client) -> None:
     assert test_value2 == b"3"
 
 
-@pytest.mark.asyncio
 async def test_incr_errors(mcache: Client) -> None:
     key, value = b'key:incr:2', b'string'
     await mcache.set(key, value)
@@ -320,7 +300,6 @@ async def test_incr_errors(mcache: Client) -> None:
         await mcache.incr(key, 3.14)  # type: ignore[arg-type]
 
 
-@pytest.mark.asyncio
 async def test_decr(mcache: Client) -> None:
     key, value = b'key:decr:1', b'17'
     await mcache.set(key, value)
@@ -335,7 +314,6 @@ async def test_decr(mcache: Client) -> None:
     assert test_value3 == 0
 
 
-@pytest.mark.asyncio
 async def test_decr_errors(mcache: Client) -> None:
     key, value = b'key:decr:2', b'string'
     await mcache.set(key, value)
@@ -347,13 +325,11 @@ async def test_decr_errors(mcache: Client) -> None:
         await mcache.decr(key, 3.14)  # type: ignore[arg-type]
 
 
-@pytest.mark.asyncio
 async def test_stats(mcache: Client) -> None:
     stats = await mcache.stats()
     assert b'pid' in stats
 
 
-@pytest.mark.asyncio
 async def test_touch(mcache: Client) -> None:
     key, value = b'key:touch:1', b'17'
     await mcache.set(key, value)
@@ -381,7 +357,6 @@ async def test_touch(mcache: Client) -> None:
             await mcache.touch(b"not:" + key, 1)
 
 
-@pytest.mark.asyncio
 async def test_close(mcache: Client) -> None:
     await mcache.close()
     assert mcache._pool.size() == 0
@@ -403,7 +378,6 @@ async def test_close(mcache: Client) -> None:
         bytes("안녕하세요", "utf-8"),
     ]
 )
-@pytest.mark.asyncio
 async def test_flag_helper(
         mcache_flag_client: FlagClient[Any], value: object) -> None:
     key = b"key:test_flag_helper"
@@ -413,7 +387,6 @@ async def test_flag_helper(
     assert v2 == value
 
 
-@pytest.mark.asyncio
 async def test_objects_not_supported_without_flag_handler(mcache: Client) -> None:
     key = b"key:test_objects_not_supported_without_flag_handler"
 
@@ -426,7 +399,6 @@ async def test_objects_not_supported_without_flag_handler(mcache: Client) -> Non
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_flag_handler_invoked_only_when_expected(
         mcache_flag_client: FlagClient[Any], demo_flag_helper: FlagHelperDemo) -> None:
     key = b"key:test_flag_handler_invoked_only_when_expected"
