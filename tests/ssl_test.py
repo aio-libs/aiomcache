@@ -19,6 +19,7 @@ async def test_ssl_params_forwarded_from_client() -> None:
             mock.create_autospec(StreamReader),
             mock.create_autospec(StreamWriter),
         ),
+        autospec=True,
     ) as oc:
         await client._pool.acquire()
 
