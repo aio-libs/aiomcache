@@ -10,8 +10,10 @@ from .conftest import McacheParams
 
 
 @pytest.mark.skipif(sys.version_info < (3, 8), reason="AsyncMock requires python3.8")
-async def test_ssl_params_forwarded_from_client() -> None:
-    client = Client("host", port=11211, ssl=True, ssl_handshake_timeout=20)
+async def test_params_forwarded_from_client() -> None:
+    client = Client("host", port=11211, conn_args={
+        "ssl": True, "ssl_handshake_timeout": 20
+    })
 
     with mock.patch(
         "asyncio.open_connection",
@@ -29,7 +31,7 @@ async def test_ssl_params_forwarded_from_client() -> None:
 async def test_ssl_client_fails_against_plaintext_server(
     mcache_params: McacheParams,
 ) -> None:
-    client = Client(**mcache_params, ssl=True)
+    client = Client(**mcache_params, conn_args={"ssl": True})
     # If SSL was correctly enabled, this should
     # fail, since SSL isn't enabled on the memcache
     # server.

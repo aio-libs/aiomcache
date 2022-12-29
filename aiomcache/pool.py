@@ -1,6 +1,5 @@
 import asyncio
-from ssl import SSLContext
-from typing import NamedTuple, Optional, Set, Union
+from typing import Any, Dict, NamedTuple, Optional, Set
 
 __all__ = ['MemcachePool']
 
@@ -12,14 +11,12 @@ class Connection(NamedTuple):
 
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
-                 ssl: Optional[Union[bool, SSLContext]] = None,
-                 ssl_handshake_timeout: Optional[float] = None):
+                 conn_args: Optional[Dict[str, Any]] = None):
         self._host = host
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
-        self._ssl = ssl
-        self._ssl_handshake_timeout = ssl_handshake_timeout
+        self.conn_args = conn_args or {}
         self._pool: asyncio.Queue[Connection] = asyncio.Queue()
         self._in_use: Set[Connection] = set()
 
@@ -71,8 +68,7 @@ class MemcachePool:
     async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
             reader, writer = await asyncio.open_connection(
-                self._host, self._port, ssl=self._ssl,
-                ssl_handshake_timeout=self._ssl_handshake_timeout)
+                self._host, self._port, **self.conn_args)
             if self.size() < self._maxsize:
                 return Connection(reader, writer)
             else:
