@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, NamedTuple, Optional, Set
+from typing import Any, Mapping, NamedTuple, Optional, Set
 
 __all__ = ['MemcachePool']
 
@@ -11,7 +11,7 @@ class Connection(NamedTuple):
 
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
-                 conn_args: Optional[Dict[str, Any]] = None):
+                 conn_args: Optional[Mapping[str, Any]] = None):
         self._host = host
         self._port = port
         self._minsize = minsize

@@ -1,8 +1,8 @@
 import functools
 import re
 import sys
-from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
-                    Union, overload)
+from typing import (Any, Awaitable, Callable, Dict, Generic, Mapping, Optional, Tuple,
+                    TypeVar, Union, overload)
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -52,7 +52,7 @@ def acquire(
 class FlagClient(Generic[_T]):
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Dict[str, Any]] = None,
+                 conn_args: Optional[Mapping[str, Any]] = None,
                  get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
                  set_flag_handler: Optional[_SetFlagHandler[_T]] = None):
         """
@@ -499,7 +499,7 @@ class FlagClient(Generic[_T]):
 class Client(FlagClient[bytes]):
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Dict[str, Any]] = None):
+                 conn_args: Optional[Mapping[str, Any]] = None):
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
                          conn_args=conn_args,
                          get_flag_handler=None, set_flag_handler=None)
