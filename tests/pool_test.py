@@ -126,6 +126,7 @@ async def test_maxsize_greater_than_minsize(mcache_params: McacheParams) -> None
     assert isinstance(conn.reader, asyncio.StreamReader)
     assert isinstance(conn.writer, asyncio.StreamWriter)
     pool.release(conn)
+    await pool.clear()
 
 
 async def test_0_minsize(mcache_params: McacheParams) -> None:
@@ -134,6 +135,7 @@ async def test_0_minsize(mcache_params: McacheParams) -> None:
     assert isinstance(conn.reader, asyncio.StreamReader)
     assert isinstance(conn.writer, asyncio.StreamWriter)
     pool.release(conn)
+    await pool.clear()
 
 
 async def test_bad_connection(mcache_params: McacheParams) -> None:

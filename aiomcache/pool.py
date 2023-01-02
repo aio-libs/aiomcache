@@ -1,5 +1,5 @@
 import asyncio
-from typing import NamedTuple, Optional, Set
+from typing import Any, Mapping, NamedTuple, Optional, Set
 
 __all__ = ['MemcachePool']
 
@@ -10,11 +10,13 @@ class Connection(NamedTuple):
 
 
 class MemcachePool:
-    def __init__(self, host: str, port: int, *, minsize: int, maxsize: int):
+    def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
+                 conn_args: Optional[Mapping[str, Any]] = None):
         self._host = host
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
+        self.conn_args = conn_args or {}
         self._pool: asyncio.Queue[Connection] = asyncio.Queue()
         self._in_use: Set[Connection] = set()
 
@@ -66,7 +68,7 @@ class MemcachePool:
     async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
             reader, writer = await asyncio.open_connection(
-                self._host, self._port)
+                self._host, self._port, **self.conn_args)
             if self.size() < self._maxsize:
                 return Connection(reader, writer)
             else:

@@ -1,8 +1,8 @@
 import functools
 import re
 import sys
-from typing import (Any, Awaitable, Callable, Dict, Generic, Optional, Tuple, TypeVar,
-                    Union, overload)
+from typing import (Any, Awaitable, Callable, Dict, Generic, Mapping, Optional, Tuple,
+                    TypeVar, Union, overload)
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -52,6 +52,7 @@ def acquire(
 class FlagClient(Generic[_T]):
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 conn_args: Optional[Mapping[str, Any]] = None,
                  get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
                  set_flag_handler: Optional[_SetFlagHandler[_T]] = None):
         """
@@ -61,6 +62,9 @@ class FlagClient(Generic[_T]):
         :param port: memcached port
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
+        :param conn_args: extra arguments passed to
+            asyncio.open_connection(). For details, see:
+            https://docs.python.org/3/library/asyncio-stream.html#asyncio.open_connection.
         :param get_flag_handler: async method to call to convert flagged
             values. Method takes tuple: (value, flags) and should return
             processed value or raise ClientException if not supported.
@@ -72,7 +76,8 @@ class FlagClient(Generic[_T]):
             pool_minsize = pool_size
 
         self._pool = MemcachePool(
-            host, port, minsize=pool_minsize, maxsize=pool_size)
+            host, port, minsize=pool_minsize, maxsize=pool_size,
+            conn_args=conn_args)
 
         self._get_flag_handler = get_flag_handler
         self._set_flag_handler = set_flag_handler
@@ -493,6 +498,8 @@ class FlagClient(Generic[_T]):
 
 class Client(FlagClient[bytes]):
     def __init__(self, host: str, port: int = 11211, *,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None):
+                 pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 conn_args: Optional[Mapping[str, Any]] = None):
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
+                         conn_args=conn_args,
                          get_flag_handler=None, set_flag_handler=None)
