@@ -35,7 +35,7 @@ jobs:
     - name: Install python dependencies
       uses: py-actions/py-dependency-install@v2
       with:
-        path: requirements.txt
+        path: requirements-dev.txt
     - name: Mypy
       run: |
         mypy
