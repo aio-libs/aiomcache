@@ -1,0 +1,8 @@
+-r requirements.txt
+
+mypy==0.991
+flake8==6.0.0
+flake8-bandit==4.1.1
+flake8-bugbear==22.12.6
+flake8-import-order==0.18.2
+flake8-requirements==1.7.6
