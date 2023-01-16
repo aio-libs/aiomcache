@@ -145,7 +145,7 @@ async def test_bad_connection(mcache_params: McacheParams) -> None:
     assert pool.size() == 0
     with pytest.raises(socket.gaierror):
         conn = await pool.acquire()
-    assert isinstance(conn.reader, asyncio.StreamReader)
-    assert isinstance(conn.writer, asyncio.StreamWriter)
-    pool.release(conn)
+        assert isinstance(conn.reader, asyncio.StreamReader)
+        assert isinstance(conn.writer, asyncio.StreamWriter)
+        pool.release(conn)
     assert pool.size() == 0
