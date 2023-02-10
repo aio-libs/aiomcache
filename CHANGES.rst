@@ -4,6 +4,10 @@ CHANGES
 
 .. towncrier release notes start
 
+0.8.1 (2023-02-10)
+==================
+- Add ``conn_args`` to ``Client`` to allow TLS and other options when connecting to memcache.
+
 0.8.0 (2022-12-11)
 ==================
 - Add ``FlagClient`` to support memcached flags.
