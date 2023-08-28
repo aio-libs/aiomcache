@@ -2,7 +2,7 @@ import codecs
 import os
 import re
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
 
 with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
@@ -44,7 +44,7 @@ setup(name='aiomcache',
       maintainer_email='aio-libs@googlegroups.com',
       url='https://github.com/aio-libs/aiomcache/',
       license='BSD',
-      packages=find_packages(),
+      packages=("aiomcache",),
       python_requires='>=3.7',
       install_requires=('typing_extensions>=4; python_version<"3.11"',),
       tests_require=("nose",),
