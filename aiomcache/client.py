@@ -203,7 +203,8 @@ class FlagClient(Generic[_T]):
 
     @acquire
     @overload
-    async def get(self, conn: Connection, key: bytes, default: None = ...) -> Union[bytes, _T, None]:
+    async def get(self, conn: Connection, key: bytes,
+                  default: None = ...) -> Union[bytes, _T, None]:
         ...
 
     @acquire
