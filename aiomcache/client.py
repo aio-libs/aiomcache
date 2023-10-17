@@ -201,16 +201,18 @@ class FlagClient(Generic[_T]):
 
         return response == const.DELETED
 
+    @acquire
     @overload
-    async def get(self, key: bytes, default: None = ...) -> Union[bytes, _T, None]:
+    async def get(self, conn: Connection, key: bytes,
+                  default: None = ...) -> Union[bytes, _T, None]:
         ...
 
+    @acquire
     @overload
-    async def get(self, key: bytes, default: _U) -> Union[bytes, _T, _U]:
+    async def get(self, conn: Connection, key: bytes, default: _U) -> Union[bytes, _T, _U]:
         ...
 
-    # Mypy bug: https://github.com/python/mypy/issues/12716
-    @acquire  # type: ignore[misc]
+    @acquire
     async def get(
         self, conn: Connection, key: bytes, default: Optional[_U] = None
     ) -> Union[bytes, _T, _U, None]:
