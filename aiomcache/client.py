@@ -35,7 +35,7 @@ def acquire(
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
     @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
+    async def wrapper(self: _Client, *args: _P.args,
                       **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         try:
@@ -129,7 +129,7 @@ class FlagClient(Generic[_T]):
                          with_cas: Literal[False]) -> _Result[_T, None]:
         ...
 
-    async def _multi_get(  # type: ignore[misc]
+    async def _multi_get(
         self, conn: Connection, *keys: bytes,
             with_cas: bool = True) -> _Result[_T, Optional[int]]:
         # req  - get <key> [<key> ...]\r\n
