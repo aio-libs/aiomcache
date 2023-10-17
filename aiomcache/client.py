@@ -209,8 +209,7 @@ class FlagClient(Generic[_T]):
     async def get(self, key: bytes, default: _U) -> Union[bytes, _T, _U]:
         ...
 
-    # Mypy bug: https://github.com/python/mypy/issues/12716
-    @acquire  # type: ignore[misc]
+    @acquire
     async def get(
         self, conn: Connection, key: bytes, default: Optional[_U] = None
     ) -> Union[bytes, _T, _U, None]:
