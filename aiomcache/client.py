@@ -203,18 +203,18 @@ class FlagClient(Generic[_T]):
 
     @acquire
     @overload
-    async def get(self, conn: Connection, key: bytes,
+    async def get(self, conn: Connection, /, key: bytes,
                   default: None = ...) -> Union[bytes, _T, None]:
         ...
 
     @acquire
     @overload
-    async def get(self, conn: Connection, key: bytes, default: _U) -> Union[bytes, _T, _U]:
+    async def get(self, conn: Connection, /, key: bytes, default: _U) -> Union[bytes, _T, _U]:
         ...
 
     @acquire
     async def get(
-        self, conn: Connection, key: bytes, default: Optional[_U] = None
+        self, conn: Connection, /, key: bytes, default: Optional[_U] = None
     ) -> Union[bytes, _T, _U, None]:
         """Gets a single value from the server.
 
