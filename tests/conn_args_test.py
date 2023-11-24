@@ -1,5 +1,4 @@
 import ssl
-import sys
 from asyncio import StreamReader, StreamWriter
 from unittest import mock
 
@@ -9,7 +8,6 @@ from aiomcache import Client
 from .conftest import McacheParams
 
 
-@pytest.mark.skipif(sys.version_info < (3, 8), reason="AsyncMock requires python3.8")
 async def test_params_forwarded_from_client() -> None:
     client = Client("host", port=11211, conn_args={
         "ssl": True, "ssl_handshake_timeout": 20
