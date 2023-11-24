@@ -3,7 +3,7 @@ import socket
 import sys
 import time
 import uuid
-from typing import Any, AsyncIterator, Callable, Iterator
+from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
 
 import docker as docker_mod
 import memcache
@@ -11,11 +11,6 @@ import pytest
 
 import aiomcache
 from .flag_helper import FlagHelperDemo
-
-if sys.version_info < (3, 8):
-    from typing_extensions import TypedDict
-else:
-    from typing import TypedDict
 
 if sys.version_info < (3, 11):
     from typing_extensions import NotRequired
