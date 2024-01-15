@@ -2,5 +2,5 @@ docker-py==1.10.6
 pytest==7.4.4
 pytest-asyncio==0.23.3
 pytest-cov==4.1.0
-python-memcached==1.61
+python-memcached==1.62
 typing_extensions==4.4.0; python_version<"3.11"
