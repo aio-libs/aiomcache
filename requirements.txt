@@ -1,6 +1,6 @@
 docker-py==1.10.6
 pytest==8.1.1
-pytest-asyncio==0.23.5.post1
+pytest-asyncio==0.23.6
 pytest-cov==4.1.0
 python-memcached==1.62
 typing_extensions==4.4.0; python_version<"3.11"
