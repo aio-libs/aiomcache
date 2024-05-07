@@ -4,6 +4,10 @@ CHANGES
 
 .. towncrier release notes start
 
+0.8.2 (2024-05-07)
+==================
+- Fix a static typing error with ``Client.get()``.
+
 0.8.1 (2023-02-10)
 ==================
 - Add ``conn_args`` to ``Client`` to allow TLS and other options when connecting to memcache.
