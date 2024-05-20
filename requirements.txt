@@ -1,5 +1,5 @@
 docker-py==1.10.6
-pytest==8.2.0
+pytest==8.2.1
 pytest-asyncio==0.23.7
 pytest-cov==5.0.0
 python-memcached==1.62
