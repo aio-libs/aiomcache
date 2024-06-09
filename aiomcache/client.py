@@ -310,7 +310,7 @@ class FlagClient(Generic[_T]):
                 raise ValidationException("flag handler must be set for non-byte values")
             value, flags = await self._set_flag_handler(value)
 
-        _cmd = b'%s %s %s' % (command,  key, f'{flags} {exptime} {len(value)}'.encode())
+        _cmd = b'%s %s %s' % (command, key, f'{flags} {exptime} {len(value)}'.encode())
         if cas:
             _cmd += b' ' + f'{cas}'.encode()
         cmd = _cmd + b'\r\n' + value + b'\r\n'
