@@ -135,7 +135,9 @@ class FlagClient(Generic[_T]):
         if not keys:
             return {}, {}
 
-        [self._validate_key(key) for key in keys]
+        for key in keys:
+            self._validate_key(key)
+
         if len(set(keys)) != len(keys):
             raise ClientException('duplicate keys passed to multi_get')
 
