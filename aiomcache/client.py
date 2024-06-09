@@ -410,8 +410,7 @@ class FlagClient(Generic[_T]):
     async def _incr_decr(
         self, conn: Connection, command: bytes, key: bytes, delta: int
     ) -> Optional[int]:
-        delta_byte = str(delta).encode('utf-8')
-        cmd = b' '.join([command, key, delta_byte]) + b'\r\n'
+        cmd = b'%s %s %s\r\n' % (command, key, f'{delta}'.encode())
         resp = await self._execute_simple_command(conn, cmd)
         if not resp.isdigit() or resp == const.NOT_FOUND:
             raise ClientException(
@@ -464,8 +463,7 @@ class FlagClient(Generic[_T]):
         """
         self._validate_key(key)
 
-        _cmd = b' '.join([b'touch', key, str(exptime).encode('utf-8')])
-        cmd = _cmd + b'\r\n'
+        cmd = b'touch %s %s\r\n' % (key, f'{exptime}'.encode())
         resp = await self._execute_simple_command(conn, cmd)
         if resp not in (const.TOUCHED, const.NOT_FOUND):
             raise ClientException('Memcached touch failed', resp)
