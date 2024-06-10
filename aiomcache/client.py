@@ -309,10 +309,10 @@ class FlagClient(Generic[_T]):
             if self._set_flag_handler is None:
                 raise ValidationException("flag handler must be set for non-byte values")
             value, flags = await self._set_flag_handler(value)
-
-        _cmd = b'%s %s %s' % (command, key, f'{flags} {exptime} {len(value)}'.encode())
+        args = (str(a).encode() for a in (flags, exptime, len(value)))
+        _cmd = b" ".join((command, key, *args))
         if cas:
-            _cmd += b' ' + f'{cas}'.encode()
+            _cmd += b' ' + str(cas).encode()
         cmd = _cmd + b'\r\n' + value + b'\r\n'
         resp = await self._execute_simple_command(conn, cmd)
 
