@@ -299,8 +299,8 @@ async def test_incr_errors(mcache: Client) -> None:
     with pytest.raises(ClientException):
         await mcache.incr(key, 3.14)  # type: ignore[arg-type]
 
-    value = await mcache.incr(b'not:' + key, 5)
-    assert value is None
+    ivalue = await mcache.incr(b'not:' + key, 5)
+    assert ivalue is None
 
 
 async def test_decr(mcache: Client) -> None:
@@ -327,8 +327,8 @@ async def test_decr_errors(mcache: Client) -> None:
     with pytest.raises(ClientException):
         await mcache.decr(key, 3.14)  # type: ignore[arg-type]
 
-    value = await mcache.decr(b'not:' + key, 6)
-    assert value is None
+    ivalue = await mcache.decr(b'not:' + key, 6)
+    assert ivalue is None
 
 
 async def test_stats(mcache: Client) -> None:
