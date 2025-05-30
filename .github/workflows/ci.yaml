@@ -71,6 +71,7 @@ jobs:
       uses: jkeys089/actions-memcached@master
     - name: Run tests
       run: pytest
+    - run: python -m coverage xml
     - name: Upload coverage
       uses: codecov/codecov-action@v5
       with:
