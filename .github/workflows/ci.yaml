@@ -71,11 +71,12 @@ jobs:
       uses: jkeys089/actions-memcached@master
     - name: Run tests
       run: pytest
+    - run: python -m coverage xml
     - name: Upload coverage
-      uses: codecov/codecov-action@v2
+      uses: codecov/codecov-action@v5
       with:
-        files: ./coverage.xml
-        flags: unit
+        fail_ci_if_error: true
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   check:  # This job does nothing and is only used for the branch protection
     if: always()
