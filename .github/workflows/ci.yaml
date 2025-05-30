@@ -20,16 +20,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Setup Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: 3.9
-    - name: Cache PyPI
-      uses: actions/cache@v2
-      with:
-        key: pip-lint-${{ hashFiles('requirements-dev.txt') }}
-        path: ~/.cache/pip
-        restore-keys: |
-            pip-lint-
+        cache: 'pip'
+        cache-dependency-path: '**/requirements*.txt'
     - name: Install system dependencies
       run: sudo apt-get install -y libmemcached-dev
     - name: Install python dependencies
@@ -61,7 +56,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install system dependencies
@@ -108,7 +103,7 @@ jobs:
       run: |
         python -m build
     - name: Make Release
-      uses: aio-libs/create-release@v1.3.3
+      uses: aio-libs/create-release@v1.6.6
       with:
         changes_file: CHANGES.rst
         name: aiomcache
