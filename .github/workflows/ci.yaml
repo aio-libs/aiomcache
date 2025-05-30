@@ -28,7 +28,7 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get install -y libmemcached-dev
     - name: Install python dependencies
-      uses: py-actions/py-dependency-install@v2
+      uses: py-actions/py-dependency-install@v4
       with:
         path: requirements-dev.txt
     - name: Mypy
