@@ -23,13 +23,8 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: 3.9
-    - name: Cache PyPI
-      uses: actions/cache@v2
-      with:
-        key: pip-lint-${{ hashFiles('requirements-dev.txt') }}
-        path: ~/.cache/pip
-        restore-keys: |
-            pip-lint-
+        cache: 'pip'
+        cache-dependency-path: '**/requirements*.txt'
     - name: Install system dependencies
       run: sudo apt-get install -y libmemcached-dev
     - name: Install python dependencies
