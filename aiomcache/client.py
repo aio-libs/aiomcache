@@ -410,10 +410,12 @@ class FlagClient(Generic[_T]):
     ) -> Optional[int]:
         cmd = b"%b %b %a\r\n" % (command, key, delta)
         resp = await self._execute_simple_command(conn, cmd)
-        if not resp.isdigit() or resp == const.NOT_FOUND:
+        if resp == const.NOT_FOUND:
+            return None
+        if not resp.isdigit():
             raise ClientException(
                 'Memcached {} command failed'.format(str(command)), resp)
-        return int(resp) if resp.isdigit() else None
+        return int(resp)
 
     @acquire
     async def incr(self, conn: Connection, key: bytes, increment: int = 1) -> Optional[int]:
