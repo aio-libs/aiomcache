@@ -1,7 +1,8 @@
 import asyncio
 import random
 import socket
-from unittest.mock import create_autospec, AsyncMock, call
+from typing import NoReturn
+from unittest.mock import create_autospec, call
 
 import pytest
 
@@ -177,7 +178,7 @@ async def test_acquire_catch_exc_from_task(
             self._pool = mock_pool
 
         @acquire
-        async def acquire_wait_release(self, conn: Connection):
+        async def acquire_wait_release(self, conn: Connection) -> NoReturn:
             raise exception_instance
 
     pool_size = 4
