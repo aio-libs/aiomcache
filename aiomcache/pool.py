@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Mapping, NamedTuple, Optional, Set
+from typing import Any, Awaitable, Callable, Mapping, NamedTuple, Optional, Set, Tuple
 
 __all__ = ['MemcachePool']
 
@@ -12,13 +12,15 @@ class Connection(NamedTuple):
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
                  conn_args: Optional[Mapping[str, Any]] = None):
-        self._host = host
+        self._target = host
+        self._unix = not bool(port)
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
         self.conn_args = conn_args or {}
         self._pool: asyncio.Queue[Connection] = asyncio.Queue()
         self._in_use: Set[Connection] = set()
+        self._opener = self._make_opener()
 
     async def clear(self) -> None:
         """Clear pool connections."""
@@ -65,10 +67,26 @@ class MemcachePool:
         else:
             self._pool.put_nowait(conn)
 
+    def _make_opener(self
+                     ) -> Callable[...,
+                                   Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]]:
+        """creates open function that has the same signature for unix/tcp sockets"""
+
+        if self._unix:
+            def unix_open(str_path: str, _port: int, **kwargs: Any
+                          ) -> Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
+                return asyncio.open_unix_connection(str_path, **kwargs)
+            return unix_open
+
+        def ip_open(host: str, port: int, **kwargs: Any
+                    ) -> Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
+            return asyncio.open_connection(host, port, **kwargs)
+        return ip_open
+
     async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
-            reader, writer = await asyncio.open_connection(
-                self._host, self._port, **self.conn_args)
+            reader, writer = await self._opener(
+                self._target, self._port, **self.conn_args)
             if self.size() < self._maxsize:
                 return Connection(reader, writer)
             else:

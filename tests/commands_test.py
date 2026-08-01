@@ -8,6 +8,7 @@ import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
+from .conftest import McacheUnixParams
 from .flag_helper import FlagHelperDemo
 
 
@@ -427,3 +428,15 @@ async def test_flag_handler_invoked_only_when_expected(
 
     assert orig_get_count + 1 == demo_flag_helper.get_invocation_count
     assert orig_set_count + 1 == demo_flag_helper.set_invocation_count
+
+
+async def test_client_unix_socket_set_get(
+    mcache_unix_params: McacheUnixParams,
+) -> None:
+    client = Client(path=mcache_unix_params["path"])
+    try:
+        await client.set(b"key", b"value")
+        v = await client.get(b"key")
+        assert v == b"value"
+    finally:
+        await client.close()

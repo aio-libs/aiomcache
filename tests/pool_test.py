@@ -6,7 +6,7 @@ import pytest
 
 from aiomcache.client import Client, acquire
 from aiomcache.pool import Connection, MemcachePool
-from .conftest import McacheParams
+from .conftest import McacheParams, McacheUnixParams
 
 
 async def test_pool_creation(mcache_params: McacheParams) -> None:
@@ -140,8 +140,7 @@ async def test_0_minsize(mcache_params: McacheParams) -> None:
 
 
 async def test_bad_connection(mcache_params: McacheParams) -> None:
-    pool = MemcachePool(minsize=5, maxsize=1, **mcache_params)
-    pool._host = "INVALID_HOST"
+    pool = MemcachePool("INVALID_HOST", 11211, minsize=5, maxsize=1)
     assert pool.size() == 0
     with pytest.raises(socket.gaierror):
         conn = await pool.acquire()
@@ -149,3 +148,21 @@ async def test_bad_connection(mcache_params: McacheParams) -> None:
         assert isinstance(conn.writer, asyncio.StreamWriter)
         pool.release(conn)
     assert pool.size() == 0
+
+
+async def test_pool_unix_socket_acquire_release(
+    mcache_unix_params: McacheUnixParams,
+) -> None:
+    pool = MemcachePool(mcache_unix_params["path"], 0, minsize=1, maxsize=5)
+    conn = await pool.acquire()
+    assert isinstance(conn.reader, asyncio.StreamReader)
+    assert isinstance(conn.writer, asyncio.StreamWriter)
+    pool.release(conn)
+    await pool.clear()
+
+
+async def test_pool_unix_socket_bad_path() -> None:
+    pool = MemcachePool("/tmp/nonexistent-mc.sock", 0, minsize=1, maxsize=1)  # noqa: S108
+    assert pool.size() == 0
+    with pytest.raises(FileNotFoundError):
+        await pool.acquire()
