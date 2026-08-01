@@ -362,6 +362,26 @@ async def test_close(mcache: Client) -> None:
     assert mcache._pool.size() == 0
 
 
+async def test_simple_command_server_dies_mid_response() -> None:
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        await reader.readline()
+        writer.write(b"VERSION 1.6.0")  # incomplete line, no \r\n
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port)
+    try:
+        with pytest.raises(ClientException, match="closed by the server"):
+            await asyncio.wait_for(client.version(), timeout=5)
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
 @pytest.mark.parametrize(
     "value",
     [
