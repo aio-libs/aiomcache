@@ -55,7 +55,7 @@ class FlagClient(Generic[_T]):
         Creates new Client instance.
 
         :param host: memcached host
-        :param port: memcached port (0 implies local unix socket)
+        :param port: memcached port (-1 implies local unix socket)
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
         :param conn_args: extra arguments passed to
@@ -68,7 +68,9 @@ class FlagClient(Generic[_T]):
             value to flagged value. Method takes value and must return tuple:
             (value, flags).
         """
-        self._unix = bool(port)
+        self._unix = False
+        if port == -1:
+            self._unix = True
 
         if not pool_minsize:
             pool_minsize = pool_size
@@ -515,7 +517,7 @@ class Client(FlagClient[bytes]):
         # unlikely to provide host/port with the overloads, but still need to deal with it
         if path:
             host = path
-            port = 0
+            port = -1
 
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
                          conn_args=conn_args,

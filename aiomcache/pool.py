@@ -13,7 +13,7 @@ class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
                  conn_args: Optional[Mapping[str, Any]] = None):
         self._target = host
-        self._unix = not bool(port)
+        self._unix = port == -1
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize

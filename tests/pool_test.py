@@ -153,7 +153,7 @@ async def test_bad_connection(mcache_params: McacheParams) -> None:
 async def test_pool_unix_socket_acquire_release(
     mcache_unix_params: McacheUnixParams,
 ) -> None:
-    pool = MemcachePool(mcache_unix_params["path"], 0, minsize=1, maxsize=5)
+    pool = MemcachePool(mcache_unix_params["path"], -1, minsize=1, maxsize=5)
     conn = await pool.acquire()
     assert isinstance(conn.reader, asyncio.StreamReader)
     assert isinstance(conn.writer, asyncio.StreamWriter)
@@ -162,7 +162,7 @@ async def test_pool_unix_socket_acquire_release(
 
 
 async def test_pool_unix_socket_bad_path() -> None:
-    pool = MemcachePool("/tmp/nonexistent-mc.sock", 0, minsize=1, maxsize=1)  # noqa: S108
+    pool = MemcachePool("/tmp/nonexistent-mc.sock", -1, minsize=1, maxsize=1)  # noqa: S108
     assert pool.size() == 0
     with pytest.raises(FileNotFoundError):
         await pool.acquire()
