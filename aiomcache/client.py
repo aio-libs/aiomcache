@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import re
 import sys
@@ -35,7 +36,7 @@ def acquire(
         conn = await self._pool.acquire()
         try:
             return await func(self, conn, *args, **kwargs)
-        except Exception as exc:
+        except (Exception, asyncio.CancelledError) as exc:
             conn[0].set_exception(exc)
             raise
         finally:

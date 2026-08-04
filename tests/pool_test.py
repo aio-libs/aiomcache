@@ -1,6 +1,8 @@
 import asyncio
 import random
 import socket
+from typing import NoReturn
+from unittest.mock import create_autospec, call
 
 import pytest
 
@@ -149,3 +151,43 @@ async def test_bad_connection(mcache_params: McacheParams) -> None:
         assert isinstance(conn.writer, asyncio.StreamWriter)
         pool.release(conn)
     assert pool.size() == 0
+
+
+@pytest.mark.parametrize(
+    "exc_type,should_catch",
+    (
+        (Exception, True),
+        (asyncio.CancelledError, True),
+        (BaseException, False),
+        (KeyboardInterrupt, False),
+    ),
+)
+async def test_acquire_catch_exc_from_task(
+    mcache_params: McacheParams, exc_type: type[BaseException], should_catch: bool
+) -> None:
+    mock_conn = create_autospec(Connection, spec_set=True, instance=True)
+
+    mock_pool = create_autospec(MemcachePool, spec_set=True, instance=True)
+    mock_pool.acquire.return_value = mock_conn
+
+    exception_message = f"{exc_type.__name__} from acquire"
+    exception_instance = exc_type(exception_message)
+
+    class TestClient(Client):
+        def __init__(self, pool_size: int = 4):
+            self._pool = mock_pool
+
+        @acquire
+        async def acquire_wait_release(self, conn: Connection) -> NoReturn:
+            raise exception_instance
+
+    pool_size = 4
+    client = TestClient(pool_size=pool_size)
+    with pytest.raises(exc_type) as exc_info:
+        await client.acquire_wait_release()
+
+    assert str(exc_info.value) == exception_message
+
+    expected = [call(exception_instance)] if should_catch else []
+    assert mock_conn[0].set_exception.call_args_list == expected
+    assert mock_pool.release.call_args_list == [call(mock_conn)]

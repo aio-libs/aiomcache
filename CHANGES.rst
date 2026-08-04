@@ -4,6 +4,10 @@ CHANGES
 
 .. towncrier release notes start
 
+0.8.3 (2026-03-10)
+==================
+- Fix exception handling in acquire context manager to properly handle asyncio.CancelledError.
+
 0.8.2 (2024-05-07)
 ==================
 - Fix a static typing error with ``Client.get()``.
