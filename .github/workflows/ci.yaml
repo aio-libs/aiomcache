@@ -68,12 +68,12 @@ jobs:
         pip install -U setuptools
         pip install -r requirements.txt
         pip install codecov
-      - name: Run memcached
-        run: |
-          sudo apt-get install -y memcached
-          sudo systemctl disable --now memcached
-          memcached -d -p 11211 -l 127.0.0.1
-          memcached -d -s /tmp/memcached.sock
+    - name: Run memcached
+      run: |
+        sudo apt-get install -y memcached
+        sudo systemctl disable --now memcached
+        memcached -d -p 11211 -l 127.0.0.1
+        memcached -d -s /tmp/memcached.sock
     - name: Run tests
       run: pytest
     - run: python -m coverage xml
