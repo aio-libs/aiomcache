@@ -70,6 +70,8 @@ jobs:
         pip install codecov
     - name: Run memcached service
       uses: jkeys089/actions-memcached@master
+    - name: Run local memcached service
+      uses: Kropyls/actions-memcached-local@master
     - name: Run tests
       run: pytest
     - run: python -m coverage xml
