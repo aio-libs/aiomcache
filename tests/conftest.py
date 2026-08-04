@@ -185,7 +185,8 @@ def mcache_unix_server_docker(  # type: ignore[no-any-unimported]
 
 @pytest.fixture(scope='session')
 def mcache_unix_server(session_id: str) -> UnixServerParams:
-    sock_path = '/var/run/memcached/memcached.sock'
+    # if starting memcached via systemd, ensure privatetmp is not on
+    sock_path = '/tmp/memcached.sock'  # noqa: S108
     return mcache_unix_server_actual(sock_path)
 
 
