@@ -139,7 +139,7 @@ async def test_0_minsize(mcache_params: McacheParams) -> None:
     await pool.clear()
 
 
-async def test_bad_connection(mcache_params: McacheParams) -> None:
+async def test_bad_connection() -> None:
     pool = MemcachePool("INVALID_HOST", 11211, minsize=5, maxsize=1)
     assert pool.size() == 0
     with pytest.raises(socket.gaierror):
