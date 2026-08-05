@@ -1,10 +1,10 @@
 import contextlib
-import os
 import socket
 import sys
 import tempfile
 import time
 import uuid
+from pathlib import PosixPath
 from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
 
 import docker as docker_mod
@@ -142,45 +142,43 @@ def mcache_unix_server_actual(path: str) -> UnixServerParams:
 def mcache_unix_server_docker(  # type: ignore[no-any-unimported]
     unused_port: Callable[[], int], docker: docker_mod.Client, session_id: str
 ) -> Iterator[UnixServerParams]:
-    sock_dir = tempfile.mkdtemp()
-    os.chmod(sock_dir, 0o777)  # noqa: S103
-    sock_path = os.path.join(sock_dir, f"memcached-{session_id}.sock")
-    container = docker.containers.run(
-        image='memcached:alpine',
-        name='memcached-test-unix-{}'.format(session_id),
-        volumes={sock_dir: {"bind": sock_dir, "mode": "rw"}},
-        command=['memcached', '-s', sock_path, '-a', '0766', '-m', '64'],
-        detach=True,
-    )
-    try:
-        container.start()
-        container.reload()
-        mcache_unix_params: McacheUnixParams = {"path": sock_path}
-        delay = 0.001
-        for _i in range(10):
-            try:
-                conn = memcache.Client(sock_path)
-                conn.get_stats()
-                break
-            except Exception:
-                time.sleep(delay)
-                delay *= 2
-        else:
+    with tempfile.TemporaryDirectory() as sock_dir:
+        sock_parent = PosixPath(sock_dir)
+        sock_parent.chmod(0o777)  # noqa: S103
+        sock_path = sock_parent / f"memcached-{session_id}.sock"
+        container = docker.containers.run(
+            image='memcached:alpine',
+            name='memcached-test-unix-{}'.format(session_id),
+            volumes={sock_dir: {"bind": sock_dir, "mode": "rw"}},
+            command=['memcached', '-s', sock_path, '-a', '0766', '-m', '64'],
+            detach=True,
+        )
+        try:
+            container.start()
+            container.reload()
+            mcache_unix_params: McacheUnixParams = {"path": sock_path.as_posix()}
+            delay = 0.001
+            for _i in range(10):
+                try:
+                    conn = memcache.Client(sock_path)
+                    conn.get_stats()
+                    break
+                except Exception:
+                    time.sleep(delay)
+                    delay *= 2
+            else:
+                container.kill()
+                pytest.fail("Cannot start memcached unix socket")
+            ret: UnixServerParams = {
+                "Id": container.id,
+                "path": sock_path.as_posix(),
+                "mcache_unix_params": mcache_unix_params
+            }
+            time.sleep(.1)
+            yield ret
+        finally:
             container.kill()
-            pytest.fail("Cannot start memcached unix socket")
-        ret: UnixServerParams = {
-            "Id": container.id,
-            "path": sock_path,
-            "mcache_unix_params": mcache_unix_params
-        }
-        time.sleep(.1)
-        yield ret
-    finally:
-        container.kill()
-        container.remove()
-        if os.path.exists(sock_path):
-            os.unlink(sock_path)
-        os.rmdir(sock_dir)
+            container.remove()
 
 
 @pytest.fixture(scope='session')
@@ -196,8 +194,8 @@ def mcache_params(mcache_server: ServerParams) -> McacheParams:
 
 
 @pytest.fixture
-def mcache_unix_params(mcache_unix_server: McacheUnixParams) -> McacheUnixParams:
-    return mcache_unix_server
+def mcache_unix_params(mcache_unix_server: UnixServerParams) -> McacheUnixParams:
+    return mcache_unix_server["mcache_unix_params"]
 
 
 @pytest.fixture
