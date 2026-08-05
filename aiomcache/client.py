@@ -45,7 +45,6 @@ def acquire(
 
 
 class FlagClient(Generic[_T]):
-
     def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
                  conn_args: Optional[Mapping[str, Any]] = None,
