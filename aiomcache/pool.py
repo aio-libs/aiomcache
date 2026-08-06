@@ -13,7 +13,6 @@ class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
                  conn_args: Optional[Mapping[str, Any]] = None):
         self._target = host
-        self._unix = port == -1
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
@@ -68,7 +67,7 @@ class MemcachePool:
 
     async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
-            if self._unix:
+            if self._port == -1:  # -1 implies unix socket
                 reader, writer = await asyncio.open_unix_connection(self._target, **self.conn_args)
             else:
                 reader, writer = await asyncio.open_connection(self._target, self._port,
