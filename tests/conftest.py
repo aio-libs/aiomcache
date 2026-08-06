@@ -1,14 +1,9 @@
-import contextlib
 import socket
 import sys
-import tempfile
-import time
 import uuid
-from pathlib import PosixPath
-from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
+from typing import Any, AsyncIterator, Callable, TypedDict
 
 import docker as docker_mod
-import memcache
 import pytest
 
 import aiomcache
@@ -84,48 +79,6 @@ def mcache_server_actual(host: str, port: int = 11211) -> ServerParams:
     }
 
 
-@contextlib.contextmanager
-def mcache_server_docker(  # type: ignore[no-any-unimported]
-        unused_port: Callable[[], int], docker: docker_mod.Client, session_id: str
-) -> Iterator[ServerParams]:
-    docker.images.pull("memcached:alpine")
-    container = docker.containers.run(
-        image='memcached:alpine',
-        name='memcached-test-server-{}'.format(session_id),
-        ports={"11211/tcp": None},
-        detach=True,
-    )
-    try:
-        container.start()
-        container.reload()
-        net_settings = container.attrs["NetworkSettings"]
-        host = str(net_settings["Ports"]["11211/tcp"][0]["HostIp"])
-        port = int(net_settings["Ports"]["11211/tcp"][0]["HostPort"])
-        mcache_params: McacheParams = {"host": host, "port": port}
-        delay = 0.001
-        for _i in range(10):
-            try:
-                conn = memcache.Client(["{host}:{port}".format_map(mcache_params)])
-                conn.get_stats()
-                break
-            except Exception:
-                time.sleep(delay)
-                delay *= 2
-        else:
-            pytest.fail("Cannot start memcached")
-        ret: ServerParams = {
-            "Id": container.id,
-            "host": host,
-            "port": port,
-            "mcache_params": mcache_params
-        }
-        time.sleep(0.1)
-        yield ret
-    finally:
-        container.kill()
-        container.remove()
-
-
 @pytest.fixture(scope='session')
 def mcache_server() -> ServerParams:
     return mcache_server_actual("localhost")
@@ -136,49 +89,6 @@ def mcache_unix_server_actual(path: str) -> UnixServerParams:
         "path": path,
         "mcache_unix_params": {"path": path}
     }
-
-
-@contextlib.contextmanager
-def mcache_unix_server_docker(  # type: ignore[no-any-unimported]
-    unused_port: Callable[[], int], docker: docker_mod.Client, session_id: str
-) -> Iterator[UnixServerParams]:
-    with tempfile.TemporaryDirectory() as sock_dir:
-        sock_parent = PosixPath(sock_dir)
-        sock_parent.chmod(0o777)  # noqa: S103
-        sock_path = sock_parent / f"memcached-{session_id}.sock"
-        container = docker.containers.run(
-            image='memcached:alpine',
-            name='memcached-test-unix-{}'.format(session_id),
-            volumes={sock_dir: {"bind": sock_dir, "mode": "rw"}},
-            command=['memcached', '-s', sock_path, '-a', '0766', '-m', '64'],
-            detach=True,
-        )
-        try:
-            container.start()
-            container.reload()
-            mcache_unix_params: McacheUnixParams = {"path": sock_path.as_posix()}
-            delay = 0.001
-            for _i in range(10):
-                try:
-                    conn = memcache.Client(sock_path)
-                    conn.get_stats()
-                    break
-                except Exception:
-                    time.sleep(delay)
-                    delay *= 2
-            else:
-                container.kill()
-                pytest.fail("Cannot start memcached unix socket")
-            ret: UnixServerParams = {
-                "Id": container.id,
-                "path": sock_path.as_posix(),
-                "mcache_unix_params": mcache_unix_params
-            }
-            time.sleep(.1)
-            yield ret
-        finally:
-            container.kill()
-            container.remove()
 
 
 @pytest.fixture(scope='session')
