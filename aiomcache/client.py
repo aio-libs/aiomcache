@@ -67,7 +67,6 @@ class FlagClient(Generic[_T]):
             value to flagged value. Method takes value and must return tuple:
             (value, flags).
         """
-
         if not pool_minsize:
             pool_minsize = pool_size
 

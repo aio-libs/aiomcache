@@ -5,7 +5,7 @@ import aiomcache
 
 async def hello_aiomcache() -> None:
     mc = aiomcache.Client("127.0.0.1", 11211)
-    # can also use Client(path="/var/run/memcached/mc.sock") for unix sockets
+    # Can also use Client(path="/var/run/memcached/mc.sock") for unix sockets
     await mc.set(b"some_key", b"Some value")
     value = await mc.get(b"some_key")
     print(value)
