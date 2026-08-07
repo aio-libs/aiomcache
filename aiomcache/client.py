@@ -45,6 +45,7 @@ def acquire(
 
 
 class FlagClient(Generic[_T]):
+    __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler")
     def __init__(self, host: str, port: int = 11211, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
                  conn_args: Optional[Mapping[str, Any]] = None,
