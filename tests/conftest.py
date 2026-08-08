@@ -1,12 +1,9 @@
-import contextlib
 import socket
 import sys
-import time
 import uuid
-from typing import Any, AsyncIterator, Callable, Iterator, TypedDict
+from typing import Any, AsyncIterator, Callable, TypedDict
 
 import docker as docker_mod
-import memcache
 import pytest
 
 import aiomcache
@@ -23,11 +20,21 @@ class McacheParams(TypedDict):
     port: int
 
 
+class McacheUnixParams(TypedDict):
+    path: str
+
+
 class ServerParams(TypedDict):
     Id: NotRequired[str]
     host: str
     port: int
     mcache_params: McacheParams
+
+
+class UnixServerParams(TypedDict):
+    Id: NotRequired[str]
+    path: str
+    mcache_unix_params: McacheUnixParams
 
 
 mcache_server_option = "localhost"
@@ -72,51 +79,23 @@ def mcache_server_actual(host: str, port: int = 11211) -> ServerParams:
     }
 
 
-@contextlib.contextmanager
-def mcache_server_docker(  # type: ignore[no-any-unimported]
-        unused_port: Callable[[], int], docker: docker_mod.Client, session_id: str
-) -> Iterator[ServerParams]:
-    docker.images.pull("memcached:alpine")
-    container = docker.containers.run(
-        image='memcached:alpine',
-        name='memcached-test-server-{}'.format(session_id),
-        ports={"11211/tcp": None},
-        detach=True,
-    )
-    try:
-        container.start()
-        container.reload()
-        net_settings = container.attrs["NetworkSettings"]
-        host = net_settings["IPAddress"]
-        port = int(net_settings["Ports"]["11211/tcp"][0]["HostPort"])
-        mcache_params: McacheParams = {"host": host, "port": port}
-        delay = 0.001
-        for _i in range(10):
-            try:
-                conn = memcache.Client(["{host}:{port}".format_map(mcache_params)])
-                conn.get_stats()
-                break
-            except Exception:
-                time.sleep(delay)
-                delay *= 2
-        else:
-            pytest.fail("Cannot start memcached")
-        ret: ServerParams = {
-            "Id": container.id,
-            "host": host,
-            "port": port,
-            "mcache_params": mcache_params
-        }
-        time.sleep(0.1)
-        yield ret
-    finally:
-        container.kill()
-        container.remove()
-
-
 @pytest.fixture(scope='session')
 def mcache_server() -> ServerParams:
     return mcache_server_actual("localhost")
+
+
+def mcache_unix_server_actual(path: str) -> UnixServerParams:
+    return {
+        "path": path,
+        "mcache_unix_params": {"path": path}
+    }
+
+
+@pytest.fixture(scope='session')
+def mcache_unix_server(session_id: str) -> UnixServerParams:
+    # if starting memcached via systemd, ensure privatetmp is not on
+    sock_path = '/tmp/memcached.sock'  # noqa: S108
+    return mcache_unix_server_actual(sock_path)
 
 
 @pytest.fixture
@@ -125,8 +104,20 @@ def mcache_params(mcache_server: ServerParams) -> McacheParams:
 
 
 @pytest.fixture
+def mcache_unix_params(mcache_unix_server: UnixServerParams) -> McacheUnixParams:
+    return mcache_unix_server["mcache_unix_params"]
+
+
+@pytest.fixture
 async def mcache(mcache_params: McacheParams) -> AsyncIterator[aiomcache.Client]:
     client = aiomcache.Client(**mcache_params)
+    yield client
+    await client.close()
+
+
+@pytest.fixture
+async def mcache_unix(mcache_unix_params: McacheUnixParams) -> AsyncIterator[aiomcache.Client]:
+    client = aiomcache.Client(path=mcache_unix_params["path"])
     yield client
     await client.close()
 

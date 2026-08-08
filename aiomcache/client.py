@@ -45,7 +45,7 @@ def acquire(
 
 
 class FlagClient(Generic[_T]):
-    def __init__(self, host: str, port: int = 11211, *,
+    def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
                  conn_args: Optional[Mapping[str, Any]] = None,
                  get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
@@ -54,7 +54,7 @@ class FlagClient(Generic[_T]):
         Creates new Client instance.
 
         :param host: memcached host
-        :param port: memcached port
+        :param port: memcached port (-1 implies local unix socket)
         :param pool_size: max connection pool size
         :param pool_minsize: min connection pool size
         :param conn_args: extra arguments passed to
@@ -492,9 +492,28 @@ class FlagClient(Generic[_T]):
 
 
 class Client(FlagClient[bytes]):
-    def __init__(self, host: str, port: int = 11211, *,
+    @overload
+    def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: Optional[int] = None,
                  conn_args: Optional[Mapping[str, Any]] = None):
+        ...
+
+    @overload
+    def __init__(self, *, path: str,
+                 pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 conn_args: Optional[Mapping[str, Any]] = None):
+        ...
+
+    def __init__(self, host: str = '127.0.0.1', port: int = 11211, *,
+                 path: str = '',
+                 pool_size: int = 2, pool_minsize: Optional[int] = None,
+                 conn_args: Optional[Mapping[str, Any]] = None):
+
+        # unlikely to provide host/port with the overloads, but still need to deal with it
+        if path:
+            host = path
+            port = -1
+
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
                          conn_args=conn_args,
                          get_flag_handler=None, set_flag_handler=None)
