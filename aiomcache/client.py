@@ -107,6 +107,11 @@ class FlagClient(Generic[_T]):
 
         while not line.endswith(b'\r\n'):
             line = await conn.reader.readline()
+            if not line:
+                # readline() returns an empty string at EOF.
+                raise ClientException(
+                    'Connection closed by the server before receiving a full response',
+                )
             response.extend(line)
         return response[:-2]
 
