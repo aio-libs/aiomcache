@@ -1,6 +1,7 @@
 import asyncio
 import random
 import socket
+from typing import Optional
 
 import pytest
 
@@ -119,6 +120,61 @@ async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
     assert len(client._pool._in_use) == 0
     assert "foo" in results
     await client._pool.clear()
+
+
+async def test_cancelled_command_does_not_poison_pool(
+    mcache_params: McacheParams,
+) -> None:
+
+    response_line_read = asyncio.Event()
+
+    class CancellingClient(Client):
+        @acquire
+        async def get_then_cancel(self, conn: Connection, key: bytes) -> None:
+            # Send a complete request but only consume part of the response,
+            # leaving the rest of the reply in the stream.
+            conn.writer.write(b'get ' + key + b'\r\n')
+            await conn.writer.drain()
+            await conn.reader.readline()
+            response_line_read.set()
+            await asyncio.Event().wait()
+
+    client = CancellingClient(pool_size=1, **mcache_params)
+    try:
+        await client.set(b'key', b'value')
+
+        command: asyncio.Future[None] = asyncio.ensure_future(
+            client.get_then_cancel(b'key')
+        )
+        waiter_started = asyncio.Event()
+
+        async def get_waiting_for_connection() -> Optional[bytes]:
+            waiter_started.set()
+            return await client.get(b'key')
+
+        waiter: asyncio.Future[Optional[bytes]] = asyncio.ensure_future(
+            get_waiting_for_connection()
+        )
+
+        try:
+            await asyncio.wait_for(response_line_read.wait(), timeout=5)
+            # Ensure the second command is blocked waiting for the only
+            # connection before cancelling the first command.
+            await asyncio.wait_for(waiter_started.wait(), timeout=5)
+            command.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await command
+
+            # The waiter must receive a replacement connection, not hang or
+            # read the partial response left on the cancelled connection.
+            assert await asyncio.wait_for(waiter, timeout=5) == b'value'
+        finally:
+            for task in (command, waiter):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(command, waiter, return_exceptions=True)
+    finally:
+        await client.close()
 
 
 async def test_maxsize_greater_than_minsize(mcache_params: McacheParams) -> None:
