@@ -33,13 +33,19 @@ def acquire(
     async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
                       **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
+        # Assume the connection is unusable until the command completes.
+        # An interrupted command may have left part of its response unread.
+        broken = True
         try:
-            return await func(self, conn, *args, **kwargs)
+            result = await func(self, conn, *args, **kwargs)
         except Exception as exc:
             conn[0].set_exception(exc)
             raise
+        else:
+            broken = False
+            return result
         finally:
-            self._pool.release(conn)
+            self._pool.release(conn, broken=broken)
 
     return wrapper
 
