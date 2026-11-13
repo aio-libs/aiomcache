@@ -21,6 +21,7 @@ class MemcachePool:
         "_pool",
         "_in_use",
     )
+
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
                  conn_args: Mapping[str, Any] | None = None):
         self._target = host
