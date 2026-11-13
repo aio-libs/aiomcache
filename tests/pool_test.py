@@ -143,10 +143,7 @@ async def test_bad_connection() -> None:
     pool = MemcachePool("INVALID_HOST", 11211, minsize=5, maxsize=1)
     assert pool.size() == 0
     with pytest.raises(socket.gaierror):
-        conn = await pool.acquire()
-        assert isinstance(conn.reader, asyncio.StreamReader)
-        assert isinstance(conn.writer, asyncio.StreamWriter)
-        pool.release(conn)
+        await pool.acquire()
     assert pool.size() == 0
 
 
