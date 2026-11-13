@@ -13,7 +13,7 @@ class Connection(NamedTuple):
 class MemcachePool:
     __slots__ = (
         "__weakref__",
-        "_host",
+        "_target",
         "_port",
         "_minsize",
         "_maxsize",
