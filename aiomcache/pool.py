@@ -11,6 +11,17 @@ class Connection(NamedTuple):
 
 
 class MemcachePool:
+    __slots__ = (
+        "__weakref__",
+        "_target",
+        "_port",
+        "_minsize",
+        "_maxsize",
+        "conn_args",
+        "_pool",
+        "_in_use",
+    )
+
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
                  conn_args: Mapping[str, Any] | None = None):
         self._target = host
