@@ -1,17 +1,11 @@
 import functools
 import re
-import sys
-from typing import (Any, Awaitable, Callable, Dict, Generic, Literal, Mapping, Optional,
-                    Tuple, TypeVar, Union, overload)
+from typing import (Any, Awaitable, Callable, Concatenate, Dict, Generic, Literal,
+                    Mapping, Optional, ParamSpec, Tuple, TypeVar, Union, overload)
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
-
-if sys.version_info >= (3, 10):
-    from typing import Concatenate, ParamSpec
-else:
-    from typing_extensions import Concatenate, ParamSpec
 
 __all__ = ['Client']
 

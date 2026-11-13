@@ -1,18 +1,12 @@
 import socket
-import sys
 import uuid
-from typing import Any, AsyncIterator, Callable, TypedDict
+from typing import Any, AsyncIterator, Callable, NotRequired, TypedDict
 
 import docker as docker_mod
 import pytest
 
 import aiomcache
 from .flag_helper import FlagHelperDemo
-
-if sys.version_info < (3, 11):
-    from typing_extensions import NotRequired
-else:
-    from typing import NotRequired
 
 
 class McacheParams(TypedDict):
