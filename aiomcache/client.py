@@ -1,17 +1,11 @@
 import functools
 import re
-import sys
-from typing import (Any, Awaitable, Callable, Dict, Generic, Literal, Mapping, Optional,
-                    Tuple, TypeVar, Union, overload)
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any, Concatenate, Generic, Literal, ParamSpec, TypeVar, overload
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
 from .pool import Connection, MemcachePool
-
-if sys.version_info >= (3, 10):
-    from typing import Concatenate, ParamSpec
-else:
-    from typing_extensions import Concatenate, ParamSpec
 
 __all__ = ['Client']
 
@@ -19,10 +13,10 @@ _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _U = TypeVar("_U")
 _Client = TypeVar("_Client", bound="FlagClient[Any]")
-_Result = Tuple[Dict[bytes, Union[bytes, _T]], Dict[bytes, _U]]
+_Result = tuple[dict[bytes, bytes | _T], dict[bytes, _U]]
 
 _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
-_SetFlagHandler = Callable[[_T], Awaitable[Tuple[bytes, int]]]
+_SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
 
 
 def acquire(
@@ -46,10 +40,10 @@ def acquire(
 
 class FlagClient(Generic[_T]):
     def __init__(self, host: str, port: int, *,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Mapping[str, Any]] = None,
-                 get_flag_handler: Optional[_GetFlagHandler[_T]] = None,
-                 set_flag_handler: Optional[_SetFlagHandler[_T]] = None):
+                 pool_size: int = 2, pool_minsize: int | None = None,
+                 conn_args: Mapping[str, Any] | None = None,
+                 get_flag_handler: _GetFlagHandler[_T] | None = None,
+                 set_flag_handler: _SetFlagHandler[_T] | None = None):
         """
         Creates new Client instance.
 
@@ -126,7 +120,7 @@ class FlagClient(Generic[_T]):
 
     async def _multi_get(  # type: ignore[misc]
         self, conn: Connection, *keys: bytes,
-            with_cas: bool = True) -> _Result[_T, Optional[int]]:
+            with_cas: bool = True) -> _Result[_T, int | None]:
         # req  - get <key> [<key> ...]\r\n
         # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
         #        <data block>\r\n (if exists)
@@ -164,7 +158,7 @@ class FlagClient(Generic[_T]):
                     if not self._get_flag_handler:
                         raise ClientException("received flags without handler")
 
-                    val: Union[bytes, _T] = await self._get_flag_handler(val_bytes, flags)
+                    val: bytes | _T = await self._get_flag_handler(val_bytes, flags)
                 else:
                     val = val_bytes
 
@@ -201,18 +195,18 @@ class FlagClient(Generic[_T]):
     @acquire
     @overload
     async def get(self, conn: Connection, /, key: bytes,
-                  default: None = ...) -> Union[bytes, _T, None]:
+                  default: None = ...) -> bytes | _T | None:
         ...
 
     @acquire
     @overload
-    async def get(self, conn: Connection, /, key: bytes, default: _U) -> Union[bytes, _T, _U]:
+    async def get(self, conn: Connection, /, key: bytes, default: _U) -> bytes | _T | _U:
         ...
 
     @acquire
     async def get(
-        self, conn: Connection, /, key: bytes, default: Optional[_U] = None
-    ) -> Union[bytes, _T, _U, None]:
+        self, conn: Connection, /, key: bytes, default: _U | None = None
+    ) -> bytes | _T | _U | None:
         """Gets a single value from the server.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -224,8 +218,8 @@ class FlagClient(Generic[_T]):
 
     @acquire
     async def gets(
-        self, conn: Connection, key: bytes, default: Optional[bytes] = None
-    ) -> Tuple[Union[bytes, _T, None], Optional[int]]:
+        self, conn: Connection, key: bytes, default: bytes | None = None
+    ) -> tuple[bytes | _T | None, int | None]:
         """Gets a single value from the server together with the cas token.
 
         :param key: ``bytes``, is the key for the item being fetched
@@ -238,7 +232,7 @@ class FlagClient(Generic[_T]):
     @acquire
     async def multi_get(
         self, conn: Connection, *keys: bytes
-    ) -> Tuple[Union[bytes, _T, None], ...]:
+    ) -> tuple[bytes | _T | None, ...]:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -251,8 +245,8 @@ class FlagClient(Generic[_T]):
 
     @acquire
     async def stats(
-        self, conn: Connection, args: Optional[bytes] = None
-    ) -> Dict[bytes, Optional[bytes]]:
+        self, conn: Connection, args: bytes | None = None
+    ) -> dict[bytes, bytes | None]:
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
         # resp - STAT <name> <value>\r\n (one per result)
@@ -262,7 +256,7 @@ class FlagClient(Generic[_T]):
 
         conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
 
-        result: Dict[bytes, Optional[bytes]] = {}
+        result: dict[bytes, bytes | None] = {}
 
         resp = await conn.reader.readline()
         while resp != b'END\r\n':
@@ -282,8 +276,8 @@ class FlagClient(Generic[_T]):
         return result
 
     async def _storage_command(self, conn: Connection, command: bytes, key: bytes,
-                               value: Union[bytes, _T], exptime: int = 0,
-                               cas: Optional[int] = None) -> bool:
+                               value: bytes | _T, exptime: int = 0,
+                               cas: int | None = None) -> bool:
         # req  - set <key> <flags> <exptime> <bytes> [noreply]\r\n
         #        <data block>\r\n
         # resp - STORED\r\n (or others)
@@ -317,11 +311,11 @@ class FlagClient(Generic[_T]):
 
         if resp not in (
                 const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
-            raise ClientException('stats {} failed'.format(command.decode()), resp)
+            raise ClientException(f'stats {command.decode()} failed', resp)
         return resp == const.STORED
 
     @acquire
-    async def set(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+    async def set(self, conn: Connection, key: bytes, value: bytes | _T,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
@@ -335,7 +329,7 @@ class FlagClient(Generic[_T]):
         return await self._storage_command(conn, b"set", key, value, exptime)
 
     @acquire
-    async def cas(self, conn: Connection, key: bytes, value: Union[bytes, _T], cas_token: int,
+    async def cas(self, conn: Connection, key: bytes, value: bytes | _T, cas_token: int,
                   exptime: int = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
@@ -353,7 +347,7 @@ class FlagClient(Generic[_T]):
                                            cas=cas_token)
 
     @acquire
-    async def add(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+    async def add(self, conn: Connection, key: bytes, value: bytes | _T,
                   exptime: int = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
@@ -367,7 +361,7 @@ class FlagClient(Generic[_T]):
         return await self._storage_command(conn, b"add", key, value, exptime)
 
     @acquire
-    async def replace(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+    async def replace(self, conn: Connection, key: bytes, value: bytes | _T,
                       exptime: int = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
@@ -381,7 +375,7 @@ class FlagClient(Generic[_T]):
         return await self._storage_command(conn, b"replace", key, value, exptime)
 
     @acquire
-    async def append(self, conn: Connection, key: bytes, value: Union[bytes, _T],
+    async def append(self, conn: Connection, key: bytes, value: bytes | _T,
                      exptime: int = 0) -> bool:
         """Add data to an existing key after existing data
 
@@ -407,16 +401,16 @@ class FlagClient(Generic[_T]):
 
     async def _incr_decr(
         self, conn: Connection, command: bytes, key: bytes, delta: int
-    ) -> Optional[int]:
+    ) -> int | None:
         cmd = b"%b %b %a\r\n" % (command, key, delta)
         resp = await self._execute_simple_command(conn, cmd)
         if not resp.isdigit() or resp == const.NOT_FOUND:
             raise ClientException(
-                'Memcached {} command failed'.format(str(command)), resp)
+                f'Memcached {str(command)} command failed', resp)
         return int(resp) if resp.isdigit() else None
 
     @acquire
-    async def incr(self, conn: Connection, key: bytes, increment: int = 1) -> Optional[int]:
+    async def incr(self, conn: Connection, key: bytes, increment: int = 1) -> int | None:
         """Command is used to change data for some item in-place,
         incrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -433,7 +427,7 @@ class FlagClient(Generic[_T]):
         return await self._incr_decr(conn, b"incr", key, increment)
 
     @acquire
-    async def decr(self, conn: Connection, key: bytes, decrement: int = 1) -> Optional[int]:
+    async def decr(self, conn: Connection, key: bytes, decrement: int = 1) -> int | None:
         """Command is used to change data for some item in-place,
         decrementing it. The data for the item is treated as decimal
         representation of a 64-bit unsigned integer.
@@ -494,20 +488,20 @@ class FlagClient(Generic[_T]):
 class Client(FlagClient[bytes]):
     @overload
     def __init__(self, host: str, port: int, *,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Mapping[str, Any]] = None):
+                 pool_size: int = 2, pool_minsize: int | None = None,
+                 conn_args: Mapping[str, Any] | None = None):
         ...
 
     @overload
     def __init__(self, *, path: str,
-                 pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Mapping[str, Any]] = None):
+                 pool_size: int = 2, pool_minsize: int | None = None,
+                 conn_args: Mapping[str, Any] | None = None):
         ...
 
     def __init__(self, host: str = '127.0.0.1', port: int = 11211, *,
                  path: str = '',
-                 pool_size: int = 2, pool_minsize: Optional[int] = None,
-                 conn_args: Optional[Mapping[str, Any]] = None):
+                 pool_size: int = 2, pool_minsize: int | None = None,
+                 conn_args: Mapping[str, Any] | None = None):
 
         # unlikely to provide host/port with the overloads, but still need to deal with it
         if path:

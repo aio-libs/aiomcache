@@ -1,14 +1,12 @@
-from typing import Optional
-
 __all__ = ['ClientException', 'ValidationException']
 
 
 class ClientException(Exception):
     """Raised when the server does something we don't expect."""
 
-    def __init__(self, msg: str, item: Optional[object] = None):
+    def __init__(self, msg: str, item: object | None = None):
         if item is not None:
-            msg = '%s: %r' % (msg, item)
+            msg = f'{msg}: {item!r}'
         super().__init__(msg)
 
 
