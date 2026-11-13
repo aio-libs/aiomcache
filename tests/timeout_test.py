@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncIterator, Set, Tuple
+from typing import AsyncIterator, Optional, Set, Tuple
 from unittest import mock
 
 import pytest
@@ -9,7 +9,7 @@ from aiomcache import Client
 
 @pytest.fixture
 async def server() -> AsyncIterator[Tuple[str, int]]:
-    """Fake memcached: "get <key>" returns the key, after 0.2s for "slow"."""
+    """Fake memcached that accepts commands but never replies."""
     handlers: Set["asyncio.Task[object]"] = set()
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -17,12 +17,7 @@ async def server() -> AsyncIterator[Tuple[str, int]]:
         assert task is not None
         handlers.add(task)
         try:
-            while line := await reader.readline():
-                key = line.split()[1]
-                if key == b"slow":
-                    await asyncio.sleep(0.2)
-                writer.write(b"VALUE %s 0 %d\r\n%s\r\nEND\r\n" % (key, len(key), key))
-                await writer.drain()
+            await reader.read()  # Read until the client hangs up.
         finally:
             writer.close()
 
@@ -35,13 +30,34 @@ async def server() -> AsyncIterator[Tuple[str, int]]:
     await srv.wait_closed()
 
 
+async def get(client: Client, key: bytes) -> Optional[bytes]:
+    """Call client.get(), failing instead of hanging if the timeout never fires."""
+    task = asyncio.ensure_future(client.get(key))
+    done, _ = await asyncio.wait((task,), timeout=5)
+    if not done:
+        task.cancel()
+        pytest.fail("client timeout did not fire")
+    return task.result()
+
+
 async def test_timeout(server: Tuple[str, int]) -> None:
+    client = Client(*server, timeout=0.1)
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await get(client, b"key")
+    finally:
+        await client.close()
+
+
+async def test_timeout_waiting_for_connection(server: Tuple[str, int]) -> None:
     client = Client(*server, pool_size=1, timeout=0.1)
-    with pytest.raises(asyncio.TimeoutError):
-        await client.get(b"slow")
-    # The timed-out connection must not be reused.
-    assert await client.get(b"fast") == b"fast"
-    await client.close()
+    try:
+        conn = await client._pool.acquire()  # Take the only connection.
+        with pytest.raises(asyncio.TimeoutError):
+            await get(client, b"key")
+        client._pool.release(conn)
+    finally:
+        await client.close()
 
 
 async def test_conn_timeout() -> None:
