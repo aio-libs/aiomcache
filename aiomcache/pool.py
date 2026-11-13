@@ -11,12 +11,14 @@ class Connection(NamedTuple):
 
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
-                 conn_args: Optional[Mapping[str, Any]] = None):
+                 conn_args: Optional[Mapping[str, Any]] = None,
+                 conn_timeout: Optional[float] = None):
         self._target = host
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
         self.conn_args = conn_args or {}
+        self._conn_timeout = conn_timeout
         self._pool: asyncio.Queue[Optional[Connection]] = asyncio.Queue()
         self._in_use: Set[Connection] = set()
 
@@ -87,10 +89,10 @@ class MemcachePool:
     async def _create_new_conn(self) -> Optional[Connection]:
         if self.size() < self._maxsize:
             if self._port == -1:  # -1 implies unix socket
-                reader, writer = await asyncio.open_unix_connection(self._target, **self.conn_args)
+                coro = asyncio.open_unix_connection(self._target, **self.conn_args)
             else:
-                reader, writer = await asyncio.open_connection(self._target, self._port,
-                                                               **self.conn_args)
+                coro = asyncio.open_connection(self._target, self._port, **self.conn_args)
+            reader, writer = await asyncio.wait_for(coro, self._conn_timeout)
 
             if self.size() < self._maxsize:
                 return Connection(reader, writer)
