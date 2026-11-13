@@ -80,7 +80,11 @@ class FlagClient(Generic[_T]):
             raise ValidationException('key must be bytes', key)
 
         # Must decode to str for unicode-aware comparison.
-        key_str = key.decode()
+        try:
+            key_str = key.decode()
+        except UnicodeDecodeError:
+            raise ValidationException('invalid key', key)
+
         m = self._valid_key_re.match(key_str)
         if m:
             # in python re, $ matches either end of line or right before
