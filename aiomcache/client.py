@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import re
 from collections.abc import Awaitable, Callable, Mapping
@@ -23,9 +24,7 @@ def acquire(
     func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
-    @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
-                      **kwargs: _P.kwargs) -> _T:
+    async def run(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         conn = await self._pool.acquire()
         # Assume the connection is unusable until the command completes.
         # An interrupted command may have left part of its response unread.
@@ -38,17 +37,26 @@ def acquire(
 
         return result
 
+    @functools.wraps(func)
+    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
+                      **kwargs: _P.kwargs) -> _T:
+        # Subclasses may skip FlagClient.__init__, leaving the slot unset.
+        timeout = getattr(self, "_timeout", None)
+        return await asyncio.wait_for(run(self, *args, **kwargs), timeout)
+
     return wrapper
 
 
 class FlagClient(Generic[_T]):
-    __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler")
+    __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler", "_timeout")
 
     def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: int | None = None,
                  conn_args: Mapping[str, Any] | None = None,
                  get_flag_handler: _GetFlagHandler[_T] | None = None,
-                 set_flag_handler: _SetFlagHandler[_T] | None = None):
+                 set_flag_handler: _SetFlagHandler[_T] | None = None,
+                 timeout: float | None = None,
+                 conn_timeout: float | None = None):
         """
         Creates new Client instance.
 
@@ -65,13 +73,17 @@ class FlagClient(Generic[_T]):
         :param set_flag_handler: async method to call to convert non bytes
             value to flagged value. Method takes value and must return tuple:
             (value, flags).
+        :param timeout: max seconds for a command, including waiting for a
+            pool connection. Raises asyncio.TimeoutError.
+        :param conn_timeout: max seconds to open a new connection.
         """
         if not pool_minsize:
             pool_minsize = pool_size
 
         self._pool = MemcachePool(
             host, port, minsize=pool_minsize, maxsize=pool_size,
-            conn_args=conn_args)
+            conn_args=conn_args, conn_timeout=conn_timeout)
+        self._timeout = timeout
 
         self._get_flag_handler = get_flag_handler
         self._set_flag_handler = set_flag_handler
@@ -505,19 +517,25 @@ class Client(FlagClient[bytes]):
     @overload
     def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: int | None = None,
-                 conn_args: Mapping[str, Any] | None = None):
+                 conn_args: Mapping[str, Any] | None = None,
+                 timeout: float | None = None,
+                 conn_timeout: float | None = None):
         ...
 
     @overload
     def __init__(self, *, path: str,
                  pool_size: int = 2, pool_minsize: int | None = None,
-                 conn_args: Mapping[str, Any] | None = None):
+                 conn_args: Mapping[str, Any] | None = None,
+                 timeout: float | None = None,
+                 conn_timeout: float | None = None):
         ...
 
     def __init__(self, host: str = '127.0.0.1', port: int = 11211, *,
                  path: str = '',
                  pool_size: int = 2, pool_minsize: int | None = None,
-                 conn_args: Mapping[str, Any] | None = None):
+                 conn_args: Mapping[str, Any] | None = None,
+                 timeout: float | None = None,
+                 conn_timeout: float | None = None):
 
         # unlikely to provide host/port with the overloads, but still need to deal with it
         if path:
@@ -526,4 +544,5 @@ class Client(FlagClient[bytes]):
 
         super().__init__(host, port, pool_size=pool_size, pool_minsize=pool_minsize,
                          conn_args=conn_args,
-                         get_flag_handler=None, set_flag_handler=None)
+                         get_flag_handler=None, set_flag_handler=None,
+                         timeout=timeout, conn_timeout=conn_timeout)
