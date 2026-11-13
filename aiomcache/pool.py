@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any, NamedTuple
 
-__all__ = ["MemcachePool"]
+__all__ = ['MemcachePool']
 
 
 class Connection(NamedTuple):
