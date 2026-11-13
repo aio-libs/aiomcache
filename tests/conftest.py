@@ -1,9 +1,7 @@
-import socket
-import uuid
-from collections.abc import AsyncIterator, Callable
-from typing import Any, NotRequired, TypedDict
+from collections.abc import AsyncIterator
+from typing import Any, TypedDict
+from urllib.parse import urlsplit
 
-import docker as docker_mod
 import pytest
 
 import aiomcache
@@ -19,88 +17,25 @@ class McacheUnixParams(TypedDict):
     path: str
 
 
-class ServerParams(TypedDict):
-    Id: NotRequired[str]
-    host: str
-    port: int
-    mcache_params: McacheParams
-
-
-class UnixServerParams(TypedDict):
-    Id: NotRequired[str]
-    path: str
-    mcache_unix_params: McacheUnixParams
-
-
-mcache_server_option = "localhost"
-
-
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        '--memcached', help='Memcached server')
-
-
-@pytest.fixture(scope='session')
-def unused_port() -> Callable[[], int]:
-    def f() -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('127.0.0.1', 0))
-            return s.getsockname()[1]  # type: ignore[no-any-return]
-    return f
-
-
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    global mcache_server_option
-    mcache_server_option = item.config.getoption("--memcached", "localhost")
-
-
-@pytest.fixture(scope='session')
-def session_id() -> str:
-    '''Unique session identifier, random string.'''
-    return str(uuid.uuid4())
-
-
-@pytest.fixture(scope='session')
-def docker() -> docker_mod.Client:  # type: ignore[no-any-unimported]
-    return docker_mod.from_env()
-
-
-def mcache_server_actual(host: str, port: int = 11211) -> ServerParams:
-    port = int(port)
-    return {
-        "host": host,
-        "port": port,
-        "mcache_params": {"host": host, "port": port}
-    }
-
-
-@pytest.fixture(scope='session')
-def mcache_server() -> ServerParams:
-    return mcache_server_actual("localhost")
-
-
-def mcache_unix_server_actual(path: str) -> UnixServerParams:
-    return {
-        "path": path,
-        "mcache_unix_params": {"path": path}
-    }
-
-
-@pytest.fixture(scope='session')
-def mcache_unix_server(session_id: str) -> UnixServerParams:
-    # if starting memcached via systemd, ensure privatetmp is not on
-    sock_path = '/tmp/memcached.sock'  # noqa: S108
-    return mcache_unix_server_actual(sock_path)
+        "--memcached", default="localhost:11211", metavar="HOST[:PORT]",
+        help="Memcached server to test against (default: %(default)s)")
+    # If starting memcached via systemd, ensure PrivateTmp is not on.
+    parser.addoption(
+        "--memcached-socket", default="/tmp/memcached.sock", metavar="PATH",  # noqa: S108
+        help="Unix socket of a memcached server to test against (default: %(default)s)")
 
 
 @pytest.fixture
-def mcache_params(mcache_server: ServerParams) -> McacheParams:
-    return mcache_server["mcache_params"]
+def mcache_params(pytestconfig: pytest.Config) -> McacheParams:
+    url = urlsplit("//" + pytestconfig.getoption("--memcached"))
+    return {"host": url.hostname or "localhost", "port": url.port or 11211}
 
 
 @pytest.fixture
-def mcache_unix_params(mcache_unix_server: UnixServerParams) -> McacheUnixParams:
-    return mcache_unix_server["mcache_unix_params"]
+def mcache_unix_params(pytestconfig: pytest.Config) -> McacheUnixParams:
+    return {"path": pytestconfig.getoption("--memcached-socket")}
 
 
 @pytest.fixture
