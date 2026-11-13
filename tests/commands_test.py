@@ -135,7 +135,7 @@ async def test_multi_get_doubling_keys(mcache: Client) -> None:
     key, value = b'key:multi_get:3', b'1'
     await mcache.set(key, value)
 
-    with pytest.raises(ClientException):
+    with pytest.raises(ClientException, match="duplicate keys"):
         await mcache.multi_get(key, key)
 
 
