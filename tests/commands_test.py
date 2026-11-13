@@ -40,6 +40,10 @@ async def test_valid_key(mcache: Client, key: bytes) -> None:
     b"\x7F",
     "\u0080".encode(),
     "\u009F".encode(),
+    # Non-UTF-8 bytes
+    b"\x80",
+    b"\xff",
+    b"\xff\xfe",
 ))
 async def test_invalid_key(mcache: Client, key: bytes) -> None:
     with pytest.raises(ValidationException, match="invalid key"):
