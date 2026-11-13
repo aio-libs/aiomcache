@@ -462,10 +462,10 @@ class FlagClient(Generic[_T]):
         return resp == const.TOUCHED
 
     @acquire
-    async def version(self, conn: Connection) -> bytes:
+    async def version(self, conn: Connection) -> bytearray:
         """Current version of the server.
 
-        :return: ``bytes``, memcached version for current the server.
+        :return: memcached version for the current server.
         """
 
         command = b'version\r\n'
