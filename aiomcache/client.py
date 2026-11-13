@@ -93,7 +93,7 @@ class FlagClient(Generic[_T]):
 
         return key
 
-    async def _execute_simple_command(self, conn: Connection, raw_command: bytes) -> bytes:
+    async def _execute_simple_command(self, conn: Connection, raw_command: bytes) -> bytearray:
         response, line = bytearray(), b''
 
         conn.writer.write(raw_command)
