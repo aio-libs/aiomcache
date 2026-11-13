@@ -49,7 +49,7 @@ async def test_invalid_key(mcache: Client, key: bytes) -> None:
 async def test_version(mcache: Client) -> None:
     version = await mcache.version()
     stats = await mcache.stats()
-    assert version == stats[b'version']
+    assert bytes(version) == stats[b'version']
 
     with mock.patch.object(
             mcache,
