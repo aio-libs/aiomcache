@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any, Mapping, NamedTuple, Optional, Set
+from collections.abc import Mapping
+from typing import Any, NamedTuple
 
 __all__ = ['MemcachePool']
 
@@ -11,14 +12,14 @@ class Connection(NamedTuple):
 
 class MemcachePool:
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
-                 conn_args: Optional[Mapping[str, Any]] = None):
+                 conn_args: Mapping[str, Any] | None = None):
         self._target = host
         self._port = port
         self._minsize = minsize
         self._maxsize = maxsize
         self.conn_args = conn_args or {}
         self._pool: asyncio.Queue[Connection] = asyncio.Queue()
-        self._in_use: Set[Connection] = set()
+        self._in_use: set[Connection] = set()
 
     async def clear(self) -> None:
         """Clear pool connections."""
@@ -42,7 +43,7 @@ class MemcachePool:
                 break
             self._pool.put_nowait(_conn)
 
-        conn: Optional[Connection] = None
+        conn: Connection | None = None
         while not conn:
             _conn = await self._pool.get()
             if _conn.reader.at_eof() or _conn.reader.exception() is not None:
@@ -65,7 +66,7 @@ class MemcachePool:
         else:
             self._pool.put_nowait(conn)
 
-    async def _create_new_conn(self) -> Optional[Connection]:
+    async def _create_new_conn(self) -> Connection | None:
         if self.size() < self._maxsize:
             if self._port == -1:  # -1 implies unix socket
                 reader, writer = await asyncio.open_unix_connection(self._target, **self.conn_args)

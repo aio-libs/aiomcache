@@ -1,6 +1,6 @@
 import pickle  # noqa: S403
 from enum import IntEnum
-from typing import Any, Tuple
+from typing import Any
 
 
 # See also:
@@ -26,7 +26,7 @@ class FlagHelperDemo:
 
     # demo/ref flag handler, for more elaborate potential handlers, see:
     # https://github.com/lericson/pylibmc/blob/master/src/_pylibmcmodule.c#L1241
-    async def demo_set_flag_handler(self, value: Any) -> Tuple[bytes, int]:
+    async def demo_set_flag_handler(self, value: Any) -> tuple[bytes, int]:
         self.set_invocation_count += 1
 
         # in this example exclusively use Pickle, more elaborate handler

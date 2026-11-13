@@ -1,6 +1,7 @@
 import socket
 import uuid
-from typing import Any, AsyncIterator, Callable, NotRequired, TypedDict
+from collections.abc import AsyncIterator, Callable
+from typing import Any, NotRequired, TypedDict
 
 import docker as docker_mod
 import pytest
