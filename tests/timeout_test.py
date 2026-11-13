@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncIterator, Tuple
+from typing import AsyncIterator, Set, Tuple
 from unittest import mock
 
 import pytest
@@ -10,23 +10,28 @@ from aiomcache import Client
 @pytest.fixture
 async def server() -> AsyncIterator[Tuple[str, int]]:
     """Fake memcached: "get <key>" returns the key, after 0.2s for "slow"."""
-    writers = set()
+    handlers: Set["asyncio.Task[object]"] = set()
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        writers.add(writer)
-        while line := await reader.readline():
-            key = line.split()[1]
-            if key == b"slow":
-                await asyncio.sleep(0.2)
-            writer.write(b"VALUE %s 0 %d\r\n%s\r\nEND\r\n" % (key, len(key), key))
-            await writer.drain()
-        writer.close()
+        task = asyncio.current_task()
+        assert task is not None
+        handlers.add(task)
+        try:
+            while line := await reader.readline():
+                key = line.split()[1]
+                if key == b"slow":
+                    await asyncio.sleep(0.2)
+                writer.write(b"VALUE %s 0 %d\r\n%s\r\nEND\r\n" % (key, len(key), key))
+                await writer.drain()
+        finally:
+            writer.close()
 
     srv = await asyncio.start_server(handle, "127.0.0.1", 0)
     yield "127.0.0.1", srv.sockets[0].getsockname()[1]
     srv.close()
-    for w in writers:
-        w.close()
+    for task in handlers:
+        task.cancel()
+    await asyncio.gather(*handlers, return_exceptions=True)
     await srv.wait_closed()
 
 
