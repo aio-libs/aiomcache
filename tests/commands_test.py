@@ -8,6 +8,7 @@ import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
+from .conftest import McacheUnixParams
 from .flag_helper import FlagHelperDemo
 
 
@@ -48,7 +49,7 @@ async def test_invalid_key(mcache: Client, key: bytes) -> None:
 async def test_version(mcache: Client) -> None:
     version = await mcache.version()
     stats = await mcache.stats()
-    assert version == stats[b'version']
+    assert bytes(version) == stats[b'version']
 
     with mock.patch.object(
             mcache,
@@ -134,7 +135,7 @@ async def test_multi_get_doubling_keys(mcache: Client) -> None:
     key, value = b'key:multi_get:3', b'1'
     await mcache.set(key, value)
 
-    with pytest.raises(ClientException):
+    with pytest.raises(ClientException, match="duplicate keys"):
         await mcache.multi_get(key, key)
 
 
@@ -427,3 +428,15 @@ async def test_flag_handler_invoked_only_when_expected(
 
     assert orig_get_count + 1 == demo_flag_helper.get_invocation_count
     assert orig_set_count + 1 == demo_flag_helper.set_invocation_count
+
+
+async def test_client_unix_socket_set_get(
+    mcache_unix_params: McacheUnixParams,
+) -> None:
+    client = Client(path=mcache_unix_params["path"])
+    try:
+        await client.set(b"key", b"value")
+        v = await client.get(b"key")
+        assert v == b"value"
+    finally:
+        await client.close()

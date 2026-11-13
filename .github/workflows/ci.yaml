@@ -20,9 +20,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v7
     - name: Setup Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
-        python-version: 3.9
+        python-version: 3.11
         cache: 'pip'
         cache-dependency-path: '**/requirements*.txt'
     - name: Install system dependencies
@@ -50,13 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15']
 
     steps:
     - name: Checkout
       uses: actions/checkout@v7
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         allow-prereleases: true
         python-version: ${{ matrix.python-version }}
@@ -68,13 +68,17 @@ jobs:
         pip install -U setuptools
         pip install -r requirements.txt
         pip install codecov
-    - name: Run memcached service
-      uses: jkeys089/actions-memcached@master
+    - name: Run memcached
+      run: |
+        sudo apt-get install -y memcached
+        sudo systemctl disable --now memcached
+        memcached -d -p 11211 -l 127.0.0.1
+        memcached -d -s /tmp/memcached.sock
     - name: Run tests
       run: pytest
     - run: python -m coverage xml
     - name: Upload coverage
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
       with:
         fail_ci_if_error: true
         token: ${{ secrets.CODECOV_TOKEN }}
