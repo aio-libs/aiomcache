@@ -8,6 +8,7 @@ import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
+from .conftest import McacheUnixParams
 from .flag_helper import FlagHelperDemo
 
 
@@ -39,6 +40,10 @@ async def test_valid_key(mcache: Client, key: bytes) -> None:
     b"\x7F",
     "\u0080".encode(),
     "\u009F".encode(),
+    # Non-UTF-8 bytes
+    b"\x80",
+    b"\xff",
+    b"\xff\xfe",
 ))
 async def test_invalid_key(mcache: Client, key: bytes) -> None:
     with pytest.raises(ValidationException, match="invalid key"):
@@ -48,7 +53,7 @@ async def test_invalid_key(mcache: Client, key: bytes) -> None:
 async def test_version(mcache: Client) -> None:
     version = await mcache.version()
     stats = await mcache.stats()
-    assert version == stats[b'version']
+    assert bytes(version) == stats[b'version']
 
     with mock.patch.object(
             mcache,
@@ -134,7 +139,7 @@ async def test_multi_get_doubling_keys(mcache: Client) -> None:
     key, value = b'key:multi_get:3', b'1'
     await mcache.set(key, value)
 
-    with pytest.raises(ClientException):
+    with pytest.raises(ClientException, match="duplicate keys"):
         await mcache.multi_get(key, key)
 
 
@@ -368,6 +373,26 @@ async def test_close(mcache: Client) -> None:
     assert mcache._pool.size() == 0
 
 
+async def test_simple_command_server_dies_mid_response() -> None:
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        await reader.readline()
+        writer.write(b"VERSION 1.6.0")  # incomplete line, no \r\n
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port)
+    try:
+        with pytest.raises(ClientException, match="closed by the server"):
+            await asyncio.wait_for(client.version(), timeout=5)
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -433,3 +458,15 @@ async def test_flag_handler_invoked_only_when_expected(
 
     assert orig_get_count + 1 == demo_flag_helper.get_invocation_count
     assert orig_set_count + 1 == demo_flag_helper.set_invocation_count
+
+
+async def test_client_unix_socket_set_get(
+    mcache_unix_params: McacheUnixParams,
+) -> None:
+    client = Client(path=mcache_unix_params["path"])
+    try:
+        await client.set(b"key", b"value")
+        v = await client.get(b"key")
+        assert v == b"value"
+    finally:
+        await client.close()

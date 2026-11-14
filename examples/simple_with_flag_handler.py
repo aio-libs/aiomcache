@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import pickle  # noqa: S403
 from enum import IntEnum
-from typing import Any, Tuple
+from typing import Any
 
 import aiomcache
 
@@ -20,7 +20,7 @@ async def simple_get_flag_handler(value: bytes, flags: int) -> Any:
     raise ValueError(f"unrecognized flag: {flags}")
 
 
-async def simple_set_flag_handler(value: Any) -> Tuple[bytes, int]:
+async def simple_set_flag_handler(value: Any) -> tuple[bytes, int]:
     print("set flag handler invoked")
 
     return pickle.dumps(value), SimpleFlags.DEMO_FLAG_PICKLE.value
