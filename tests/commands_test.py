@@ -289,7 +289,7 @@ async def test_incr(mcache: Client) -> None:
     test_value1 = await mcache.incr(key, 2)
     assert test_value1 == 3
 
-    # make sure value exists
+    # make sure value exist"
     test_value2 = await mcache.get(key)
     assert test_value2 == b"3"
 
@@ -304,7 +304,7 @@ async def test_incr_errors(mcache: Client) -> None:
     with pytest.raises(ClientException):
         await mcache.incr(key, 3.14)  # type: ignore[arg-type]
 
-    ivalue = await mcache.incr(b'not:' + key, 5)
+    ivalue = await mcache.incr(b"not:" + key, 5)
     assert ivalue is None
 
 
@@ -332,7 +332,7 @@ async def test_decr_errors(mcache: Client) -> None:
     with pytest.raises(ClientException):
         await mcache.decr(key, 3.14)  # type: ignore[arg-type]
 
-    ivalue = await mcache.decr(b'not:' + key, 6)
+    ivalue = await mcache.decr(b"not:" + key, 6)
     assert ivalue is None
 
 
