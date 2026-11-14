@@ -289,7 +289,7 @@ async def test_incr(mcache: Client) -> None:
     test_value1 = await mcache.incr(key, 2)
     assert test_value1 == 3
 
-    # make sure value exist
+    # make sure value exists
     test_value2 = await mcache.get(key)
     assert test_value2 == b"3"
 
