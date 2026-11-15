@@ -87,13 +87,13 @@ class MemcachePool:
         """
         self._in_use.remove(conn)
         broken = broken or conn.reader.at_eof() or conn.reader.exception() is not None
+        released_conn: Connection | None = conn
         if broken:
             self._do_close(conn)
+            released_conn = None
             # Wake one waiter so it can discard this slot and create a
             # replacement connection. None is never handed to a caller.
-            self._pool.put_nowait(None)
-        else:
-            self._pool.put_nowait(conn)
+        self._pool.put_nowait(released_conn)
 
     async def _create_new_conn(self) -> Connection | None:
         if self.size() < self._maxsize:
