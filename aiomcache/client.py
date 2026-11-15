@@ -32,10 +32,6 @@ def acquire(
         broken = True
         try:
             result = await func(self, conn, *args, **kwargs)
-        except Exception as exc:
-            conn[0].set_exception(exc)
-            raise
-        else:
             broken = False
             return result
         finally:
