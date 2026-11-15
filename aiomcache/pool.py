@@ -86,13 +86,11 @@ class MemcachePool:
             have left unread data in the stream (e.g. it was cancelled).
         """
         self._in_use.remove(conn)
+        broken = broken or conn.reader.at_eof() or conn.reader.exception() is not None
         if broken:
             self._do_close(conn)
             # Wake one waiter so it can discard this slot and create a
             # replacement connection. None is never handed to a caller.
-            self._pool.put_nowait(None)
-        elif conn.reader.at_eof() or conn.reader.exception() is not None:
-            self._do_close(conn)
             self._pool.put_nowait(None)
         else:
             self._pool.put_nowait(conn)

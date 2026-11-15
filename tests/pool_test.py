@@ -1,7 +1,6 @@
 import asyncio
 import random
 import socket
-from typing import Optional
 
 import pytest
 
@@ -143,24 +142,16 @@ async def test_cancelled_command_does_not_poison_pool(
     try:
         await client.set(b'key', b'value')
 
-        command: asyncio.Future[None] = asyncio.ensure_future(
-            client.get_then_cancel(b'key')
-        )
-        waiter_started = asyncio.Event()
+        async def cancel_command() -> None:
+            await client.get_then_cancel(b'key')
 
-        async def get_waiting_for_connection() -> Optional[bytes]:
-            waiter_started.set()
+        async def get_waiting_for_connection() -> bytes | None:
             return await client.get(b'key')
 
-        waiter: asyncio.Future[Optional[bytes]] = asyncio.ensure_future(
-            get_waiting_for_connection()
-        )
-
-        try:
+        async with asyncio.TaskGroup() as tasks:
+            command = tasks.create_task(cancel_command())
+            waiter = tasks.create_task(get_waiting_for_connection())
             await asyncio.wait_for(response_line_read.wait(), timeout=5)
-            # Ensure the second command is blocked waiting for the only
-            # connection before cancelling the first command.
-            await asyncio.wait_for(waiter_started.wait(), timeout=5)
             command.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await command
@@ -168,11 +159,6 @@ async def test_cancelled_command_does_not_poison_pool(
             # The waiter must receive a replacement connection, not hang or
             # read the partial response left on the cancelled connection.
             assert await asyncio.wait_for(waiter, timeout=5) == b'value'
-        finally:
-            for task in (command, waiter):
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(command, waiter, return_exceptions=True)
     finally:
         await client.close()
 
