@@ -32,7 +32,6 @@ def acquire(
         broken = True
         try:
             result = await func(self, conn, *args, **kwargs)
-        else:
             broken = False
         finally:
             self._pool.release(conn, broken=broken)
