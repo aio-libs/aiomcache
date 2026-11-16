@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import AsyncIterator, Optional, Set, Tuple
 from unittest import mock
 
@@ -69,3 +70,29 @@ async def test_conn_timeout() -> None:
         with pytest.raises(asyncio.TimeoutError):
             await client.get(b"key")
     await client.close()
+
+
+async def test_timeout_while_connecting(server: Tuple[str, int]) -> None:
+    """The command timeout must win even if the connection opens as it fires.
+
+    Regression test: on Python 3.11, a nested asyncio.wait_for() swallows the
+    cancellation when its inner future completes at the same moment, so the
+    command kept running (and waited forever for a reply) past its timeout.
+    """
+    conn = await asyncio.open_connection(*server)
+
+    async def open_as_deadline_passes(*args: object, **kwargs: object) -> object:
+        # Block the loop past the command deadline, then finish on the next
+        # iteration: the same iteration the expired deadline is handled.
+        time.sleep(0.2)
+        await asyncio.sleep(0)
+        return conn
+
+    client = Client(*server, timeout=0.1, conn_timeout=10)
+    try:
+        with mock.patch("asyncio.open_connection", open_as_deadline_passes):
+            with pytest.raises(asyncio.TimeoutError):
+                await get(client, b"key")
+    finally:
+        conn[1].close()
+        await client.close()

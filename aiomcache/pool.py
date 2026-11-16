@@ -103,7 +103,8 @@ class MemcachePool:
                 coro = asyncio.open_unix_connection(self._target, **self.conn_args)
             else:
                 coro = asyncio.open_connection(self._target, self._port, **self.conn_args)
-            reader, writer = await asyncio.wait_for(coro, self._conn_timeout)
+            async with asyncio.timeout(self._conn_timeout):
+                reader, writer = await coro
 
             if self.size() < self._maxsize:
                 return Connection(reader, writer)

@@ -24,25 +24,22 @@ def acquire(
     func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
 ) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
 
-    async def run(self: _Client, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        conn = await self._pool.acquire()
-        # Assume the connection is unusable until the command completes.
-        # An interrupted command may have left part of its response unread.
-        broken = True
-        try:
-            result = await func(self, conn, *args, **kwargs)
-            broken = False
-        finally:
-            self._pool.release(conn, broken=broken)
-
-        return result
-
     @functools.wraps(func)
     async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
                       **kwargs: _P.kwargs) -> _T:
         # Subclasses may skip FlagClient.__init__, leaving the slot unset.
-        timeout = getattr(self, "_timeout", None)
-        return await asyncio.wait_for(run(self, *args, **kwargs), timeout)
+        async with asyncio.timeout(getattr(self, "_timeout", None)):
+            conn = await self._pool.acquire()
+            # Assume the connection is unusable until the command completes.
+            # An interrupted command may have left part of its response unread.
+            broken = True
+            try:
+                result = await func(self, conn, *args, **kwargs)
+                broken = False
+            finally:
+                self._pool.release(conn, broken=broken)
+
+        return result
 
     return wrapper
 
@@ -74,7 +71,7 @@ class FlagClient(Generic[_T]):
             value to flagged value. Method takes value and must return tuple:
             (value, flags).
         :param timeout: max seconds for a command, including waiting for a
-            pool connection. Raises asyncio.TimeoutError.
+            pool connection. Raises TimeoutError.
         :param conn_timeout: max seconds to open a new connection.
         """
         if not pool_minsize:
