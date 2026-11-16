@@ -32,6 +32,7 @@ def acquire(
         broken = True
         try:
             result = await func(self, conn, *args, **kwargs)
+        else:
             broken = False
             return result
         finally:
