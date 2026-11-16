@@ -34,9 +34,10 @@ def acquire(
             result = await func(self, conn, *args, **kwargs)
         else:
             broken = False
-            return result
         finally:
             self._pool.release(conn, broken=broken)
+
+        return result
 
     return wrapper
 
