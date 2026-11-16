@@ -90,9 +90,8 @@ class MemcachePool:
         released_conn: Connection | None = conn
         if broken:
             self._do_close(conn)
+            # None will wake a waiter so it can discard this slot and create a new conn.
             released_conn = None
-            # Wake one waiter so it can discard this slot and create a
-            # replacement connection. None is never handed to a caller.
         self._pool.put_nowait(released_conn)
 
     async def _create_new_conn(self) -> Connection | None:
