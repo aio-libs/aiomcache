@@ -124,7 +124,6 @@ async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
 async def test_cancelled_command_does_not_poison_pool(
     mcache_params: McacheParams,
 ) -> None:
-
     response_line_read = asyncio.Event()
 
     class CancellingClient(Client):
