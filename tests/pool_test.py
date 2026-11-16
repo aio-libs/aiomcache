@@ -70,7 +70,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     await pool.clear()
 
 
-async def test_acquire_keeps_slot_when_reconnect_fails(
+async def test_acquire_recovers_when_reconnect_fails(
     mcache_params: McacheParams,
 ) -> None:
     pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
@@ -82,8 +82,8 @@ async def test_acquire_keeps_slot_when_reconnect_fails(
     ):
         with pytest.raises(OSError, match="refused"):
             await pool.acquire()
-    # The failed reconnect puts its placeholder back instead of losing the slot.
-    assert pool.size() == 1
+    # The failed reconnect isn't counted, so the next acquire() opens one.
+    assert pool.size() == 0
 
     conn = await pool.acquire()
     pool.release(conn)
