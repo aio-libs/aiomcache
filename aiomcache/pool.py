@@ -29,14 +29,16 @@ class MemcachePool:
         self._minsize = minsize
         self._maxsize = maxsize
         self.conn_args = conn_args or {}
-        self._pool: asyncio.Queue[Connection] = asyncio.Queue()
+
+        self._pool: asyncio.Queue[Connection | None] = asyncio.Queue()
         self._in_use: set[Connection] = set()
 
     async def clear(self) -> None:
         """Clear pool connections."""
         while not self._pool.empty():
             conn = await self._pool.get()
-            self._do_close(conn)
+            if conn is not None:
+                self._do_close(conn)
 
     def _do_close(self, conn: Connection) -> None:
         conn.reader.feed_eof()
@@ -57,25 +59,40 @@ class MemcachePool:
         conn: Connection | None = None
         while not conn:
             _conn = await self._pool.get()
-            if _conn.reader.at_eof() or _conn.reader.exception() is not None:
-                self._do_close(_conn)
-                conn = await self._create_new_conn()
+            if (
+                _conn is None
+                or _conn.reader.at_eof()
+                or _conn.reader.exception() is not None
+            ):
+                if _conn is not None:
+                    self._do_close(_conn)
+                try:
+                    conn = await self._create_new_conn()
+                except BaseException:
+                    self._pool.put_nowait(None)
+                    raise
             else:
                 conn = _conn
 
         self._in_use.add(conn)
         return conn
 
-    def release(self, conn: Connection) -> None:
+    def release(self, conn: Connection, *, broken: bool = False) -> None:
         """Releases connection back to the pool.
 
         :param conn: ``namedtuple`` (reader, writer)
+        :param broken: if True, the connection is closed instead of being
+            returned to the pool. This should be used when a command may
+            have left unread data in the stream (e.g. it was cancelled).
         """
         self._in_use.remove(conn)
-        if conn.reader.at_eof() or conn.reader.exception() is not None:
+        broken = broken or conn.reader.at_eof() or conn.reader.exception() is not None
+        released_conn: Connection | None = conn
+        if broken:
             self._do_close(conn)
-        else:
-            self._pool.put_nowait(conn)
+            # None will wake a waiter so it can discard this slot and create a new conn.
+            released_conn = None
+        self._pool.put_nowait(released_conn)
 
     async def _create_new_conn(self) -> Connection | None:
         if self.size() < self._maxsize:
