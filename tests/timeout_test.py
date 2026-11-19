@@ -33,7 +33,7 @@ async def server() -> AsyncIterator[tuple[str, int]]:
 
 async def get(client: Client, key: bytes) -> bytes | None:
     """Call client.get(), failing instead of hanging if the timeout never fires."""
-    task = asyncio.ensure_future(client.get(key))
+    task = asyncio.create_task(client.get(key))
     done, _ = await asyncio.wait((task,), timeout=5)
     if not done:
         task.cancel()
@@ -73,12 +73,7 @@ async def test_conn_timeout() -> None:
 
 
 async def test_timeout_while_connecting(server: tuple[str, int]) -> None:
-    """The command timeout must win even if the connection opens as it fires.
-
-    Regression test: on Python 3.11, a nested asyncio.wait_for() swallows the
-    cancellation when its inner future completes at the same moment, so the
-    command kept running (and waited forever for a reply) past its timeout.
-    """
+    """The command timeout must win even if the connection opens as it fires."""
     conn = await asyncio.open_connection(*server)
 
     async def open_as_deadline_passes(*args: object, **kwargs: object) -> object:
