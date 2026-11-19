@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any, Concatenate, Generic, Literal, ParamSpec, TypeVar, overload
 
 from . import constants as const
@@ -21,8 +21,8 @@ _SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
 
 
 def acquire(
-    func: Callable[Concatenate[_Client, Connection, _P], Awaitable[_T]]
-) -> Callable[Concatenate[_Client, _P], Awaitable[_T]]:
+    func: Callable[Concatenate[_Client, Connection, _P], Coroutine[None, None, _T]]
+) -> Callable[Concatenate[_Client, _P], Coroutine[None, None, _T]]:
 
     @functools.wraps(func)
     async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
