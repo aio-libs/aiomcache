@@ -27,8 +27,7 @@ def acquire(
     @functools.wraps(func)
     async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
                       **kwargs: _P.kwargs) -> _T:
-        # Subclasses may skip FlagClient.__init__, leaving the slot unset.
-        async with asyncio.timeout(getattr(self, "_timeout", None)):
+        async with asyncio.timeout(self._timeout):
             conn = await self._pool.acquire()
             # Assume the connection is unusable until the command completes.
             # An interrupted command may have left part of its response unread.
