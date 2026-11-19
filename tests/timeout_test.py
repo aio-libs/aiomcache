@@ -35,7 +35,7 @@ async def get(client: Client, key: bytes) -> bytes | None:
     """Call client.get(), failing instead of hanging if the timeout never fires."""
     task = asyncio.create_task(client.get(key))
     done, _ = await asyncio.wait((task,), timeout=5)
-    if not done:
+    if not done:  # pragma: no cover
         task.cancel()
         pytest.fail("client timeout did not fire")
     return task.result()
