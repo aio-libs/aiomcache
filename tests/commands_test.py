@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -470,3 +471,42 @@ async def test_client_unix_socket_set_get(
         assert v == b"value"
     finally:
         await client.close()
+
+
+# memcached limits keys to 250 bytes, not characters.
+KEY_250_BYTES = "é".encode() * 125  # 125 characters
+KEY_251_BYTES = b"a" * 249 + "é".encode()  # 250 characters
+KEY_500_BYTES = "é".encode() * 250  # 250 characters
+
+_KeyCommand = Callable[[Client, bytes], Awaitable[object]]
+KEY_COMMANDS: dict[str, _KeyCommand] = {
+    "get": lambda mc, k: mc.get(k),
+    "gets": lambda mc, k: mc.gets(k),
+    "multi_get": lambda mc, k: mc.multi_get(b"key:other", k),
+    "set": lambda mc, k: mc.set(k, b"v"),
+    "add": lambda mc, k: mc.add(k, b"v"),
+    "replace": lambda mc, k: mc.replace(k, b"v"),
+    "append": lambda mc, k: mc.append(k, b"v"),
+    "prepend": lambda mc, k: mc.prepend(k, b"v"),
+    "cas": lambda mc, k: mc.cas(k, b"v", 1),
+    "delete": lambda mc, k: mc.delete(k),
+    "incr": lambda mc, k: mc.incr(k),
+    "decr": lambda mc, k: mc.decr(k),
+    "touch": lambda mc, k: mc.touch(k, 10),
+}
+
+
+@pytest.mark.parametrize("key", (KEY_251_BYTES, KEY_500_BYTES), ids=("251B", "500B"))
+@pytest.mark.parametrize("command", KEY_COMMANDS)
+async def test_key_over_250_bytes(mcache: Client, command: str, key: bytes) -> None:
+    with pytest.raises(ValidationException,
+                       match=f"key too long: {len(key)} bytes, max 250"):
+        await KEY_COMMANDS[command](mcache, key)
+
+
+@pytest.mark.parametrize("key", (KEY_250_BYTES, b"a" * 248 + "é".encode(), b"a" * 250))
+async def test_key_of_250_bytes(mcache: Client, key: bytes) -> None:
+    assert mcache._validate_key(key) == key
+    assert await mcache.set(key, b"v") is True
+    assert await mcache.get(key) == b"v"
+    assert await mcache.delete(key) is True

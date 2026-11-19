@@ -76,13 +76,18 @@ class FlagClient(Generic[_T]):
         self._get_flag_handler = get_flag_handler
         self._set_flag_handler = set_flag_handler
 
-    # key may be anything except whitespace and control chars, upto 250 characters.
+    # key may be anything except whitespace and control chars.
     # Must be str for unicode-aware regex.
-    _valid_key_re = re.compile("^[^\\s\x00-\x1F\x7F-\x9F]{1,250}$")
+    _valid_key_re = re.compile("^[^\\s\x00-\x1F\x7F-\x9F]+$")
 
     def _validate_key(self, key: bytes) -> bytes:
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
             raise ValidationException('key must be bytes', key)
+
+        # memcached limits the key's length in bytes, not characters.
+        if len(key) > const.MAX_KEY_LENGTH:
+            raise ValidationException(
+                f'key too long: {len(key)} bytes, max {const.MAX_KEY_LENGTH}', key)
 
         # Must decode to str for unicode-aware comparison.
         try:
