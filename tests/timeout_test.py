@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from unittest import mock
 
 import pytest
@@ -27,7 +28,8 @@ async def server() -> AsyncIterator[tuple[str, int]]:
     srv.close()
     for task in handlers:
         task.cancel()
-    await asyncio.gather(*handlers, return_exceptions=True)
+        with suppress(asyncio.CancelledError):
+            await task
     await srv.wait_closed()
 
 
