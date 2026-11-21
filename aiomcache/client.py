@@ -86,7 +86,7 @@ class FlagClient(Generic[_T]):
 
     # key may be anything except whitespace and control chars.
     # Must be str for unicode-aware regex.
-    _valid_key_re = re.compile("^[^\\s\x00-\x1F\x7F-\x9F]+$")
+    _valid_key_re = re.compile(r"^[^\s\x00-\x1F\x7F-\x9F]+$")
 
     def _validate_key(self, key: bytes) -> bytes:
         if not isinstance(key, bytes):  # avoid bugs subtle and otherwise
