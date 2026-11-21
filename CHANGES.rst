@@ -4,6 +4,12 @@ CHANGES
 
 .. towncrier release notes start
 
+Unreleased
+==========
+- Limit keys to 250 bytes, as memcached does, instead of 250 characters. Longer
+  non-ASCII keys now raise ``ValidationException`` instead of a misleading
+  ``ClientException`` from the server.
+
 0.8.2 (2024-05-07)
 ==================
 - Fix a static typing error with ``Client.get()``.
