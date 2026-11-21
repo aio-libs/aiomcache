@@ -6,3 +6,6 @@ DELETED = b'DELETED'
 VERSION = b'VERSION'
 EXISTS = b'EXISTS'
 OK = b'OK'
+
+# memcached's maximum key length, in bytes.
+MAX_KEY_LENGTH = 250
