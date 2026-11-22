@@ -160,7 +160,10 @@ class FlagClient(Generic[_T]):
     # first, so invalid input never takes, or closes, a pooled connection.
 
     @acquire
-    async def _execute_simple_command(self, conn: Connection, raw_command: bytes) -> bytearray:
+    async def _execute_simple_command(
+        self, conn: Connection, raw_command: bytes, *,
+        valid: Callable[[bytearray], bool], error: str,
+    ) -> bytearray:
         response, line = bytearray(), b''
 
         conn.writer.write(raw_command)
@@ -174,7 +177,12 @@ class FlagClient(Generic[_T]):
                     'Connection closed by the server before receiving a full response',
                 )
             response.extend(line)
-        return response[:-2]
+        response = response[:-2]
+        # Check the reply while the connection is held, so an unexpected
+        # reply discards the connection along with anything left unread.
+        if not valid(response):
+            raise ClientException(error, response)
+        return response
 
     async def close(self) -> None:
         """Closes the sockets if its open."""
@@ -261,11 +269,9 @@ class FlagClient(Generic[_T]):
         self._validate_key(key)
 
         command = b'delete ' + key + b'\r\n'
-        response = await self._execute_simple_command(command)
-
-        if response not in (const.DELETED, const.NOT_FOUND):
-            raise ClientException('Memcached delete failed', response)
-
+        response = await self._execute_simple_command(
+            command, valid=lambda r: r in (const.DELETED, const.NOT_FOUND),
+            error='Memcached delete failed')
         return response == const.DELETED
 
     @overload
@@ -379,11 +385,11 @@ class FlagClient(Generic[_T]):
         cmd = b"%b %b %a %a %a%b\r\n%b\r\n" % (
             command, key, flags, exptime, len(value), cas_value, value
         )
-        resp = await self._execute_simple_command(cmd)
-
-        if resp not in (
-                const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
-            raise ClientException(f'stats {command.decode()} failed', resp)
+        resp = await self._execute_simple_command(
+            cmd,
+            valid=lambda r: r in (
+                const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND),
+            error=f'stats {command.decode()} failed')
         return resp == const.STORED
 
     async def set(self, key: bytes, value: bytes | _T,
@@ -477,12 +483,11 @@ class FlagClient(Generic[_T]):
         self, command: bytes, key: bytes, delta: int
     ) -> int | None:
         cmd = b"%b %b %a\r\n" % (command, key, delta)
-        resp = await self._execute_simple_command(cmd)
+        resp = await self._execute_simple_command(
+            cmd, valid=lambda r: r == const.NOT_FOUND or r.isdigit(),
+            error=f'Memcached {str(command)} command failed')
         if resp == const.NOT_FOUND:
             return None
-        if not resp.isdigit():
-            raise ClientException(
-                f'Memcached {str(command)} command failed', resp)
         return int(resp)
 
     async def incr(self, key: bytes, increment: int = 1) -> int | None:
@@ -532,9 +537,9 @@ class FlagClient(Generic[_T]):
         exptime = self._validate_exptime(exptime)
 
         cmd = b"touch %b %a\r\n" % (key, exptime)
-        resp = await self._execute_simple_command(cmd)
-        if resp not in (const.TOUCHED, const.NOT_FOUND):
-            raise ClientException('Memcached touch failed', resp)
+        resp = await self._execute_simple_command(
+            cmd, valid=lambda r: r in (const.TOUCHED, const.NOT_FOUND),
+            error='Memcached touch failed')
         return resp == const.TOUCHED
 
     async def version(self) -> bytearray:
@@ -544,19 +549,18 @@ class FlagClient(Generic[_T]):
         """
 
         command = b'version\r\n'
-        response = await self._execute_simple_command(command)
-        if not response.startswith(const.VERSION):
-            raise ClientException('Memcached version failed', response)
+        response = await self._execute_simple_command(
+            command, valid=lambda r: r.startswith(const.VERSION),
+            error='Memcached version failed')
         version, number = response.rstrip(b"\r\n").split(maxsplit=1)
         return number
 
     async def flush_all(self) -> None:
         """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
-        response = await self._execute_simple_command(command)
-
-        if const.OK != response:
-            raise ClientException('Memcached flush_all failed', response)
+        await self._execute_simple_command(
+            command, valid=lambda r: r == const.OK,
+            error='Memcached flush_all failed')
 
 
 class Client(FlagClient[bytes]):

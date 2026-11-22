@@ -4,7 +4,6 @@ import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 from unittest import mock
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -58,16 +57,6 @@ async def test_version(mcache: Client) -> None:
     stats = await mcache.stats()
     assert bytes(version) == stats[b'version']
 
-    with mock.patch.object(
-            mcache,
-            "_execute_simple_command",
-            new_callable=MagicMock) as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.version()
-
 
 async def test_flush_all(mcache: Client) -> None:
     key, value = b'key:flush_all', b'flush_all_value'
@@ -81,13 +70,6 @@ async def test_flush_all(mcache: Client) -> None:
     test_value = await mcache.get(key)
     assert test_value is None
 
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.flush_all()
-
 
 async def test_set_get(mcache: Client) -> None:
     key, value = b'key:set', b'1'
@@ -98,13 +80,6 @@ async def test_set_get(mcache: Client) -> None:
     assert test_value is None
     test_value = await mcache.get(b"not:" + key, default=value)
     assert test_value == value
-
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.set(key, value)
 
 
 async def test_gets(mcache: Client) -> None:
@@ -282,14 +257,6 @@ async def test_delete(mcache: Client) -> None:
     test_value = await mcache.get(key)
     assert test_value is None
 
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-
-        with pytest.raises(ClientException):
-            await mcache.delete(key)
-
 
 async def test_delete_key_not_exists(mcache: Client) -> None:
     is_deleted = await mcache.delete(b"not:key")
@@ -372,14 +339,6 @@ async def test_touch(mcache: Client) -> None:
 
     test_value4 = await mcache.touch(b"not:" + key, 1)
     assert not test_value4
-
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-
-        with pytest.raises(ClientException):
-            await mcache.touch(b"not:" + key, 1)
 
 
 async def test_touch_errors(mcache: Client) -> None:
@@ -600,6 +559,57 @@ async def test_set_flag_handler_error_before_acquire(mcache_params: McacheParams
                 await client.set(b"key", object())
     finally:
         await client.close()
+
+
+# An unexpected reply, followed by bytes the client must never read.
+UNEXPECTED_REPLY = b"SERVER_ERROR boom\r\nVERSION stale\r\n"
+UNEXPECTED_CALLS: dict[str, tuple[_InvalidCall, str]] = {
+    "delete": (lambda mc: mc.delete(b"key"), "Memcached delete failed"),
+    "set": (lambda mc: mc.set(b"key", b"v"), "stats set failed"),
+    "cas": (lambda mc: mc.cas(b"key", b"v", 1), "stats cas failed"),
+    "incr": (lambda mc: mc.incr(b"key"), "Memcached b'incr' command failed"),
+    "decr": (lambda mc: mc.decr(b"key"), "Memcached b'decr' command failed"),
+    "touch": (lambda mc: mc.touch(b"key", 1), "Memcached touch failed"),
+    "version": (lambda mc: mc.version(), "Memcached version failed"),
+    "flush_all": (lambda mc: mc.flush_all(), "Memcached flush_all failed"),
+    "get": (lambda mc: mc.get(b"key"), "get failed"),
+}
+
+
+@pytest.mark.parametrize("call", UNEXPECTED_CALLS)
+async def test_unexpected_reply_discards_connection(call: str) -> None:
+    # The first command gets an unexpected reply with extra bytes after it.
+    # The connection must be discarded, so the next command gets its own
+    # reply and not the leftover bytes.
+    connections = 0
+    first = True
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        nonlocal connections, first
+        connections += 1
+        while line := await reader.readline():
+            if line.split()[0] in (b"set", b"cas"):
+                await reader.readline()  # The data block.
+            writer.write(UNEXPECTED_REPLY if first else b"VERSION 1.2.3\r\n")
+            first = False
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, pool_size=1)
+    func, message = UNEXPECTED_CALLS[call]
+    try:
+        with pytest.raises(ClientException) as excinfo:
+            await func(client)
+        assert excinfo.value.args == (message, b"SERVER_ERROR boom\r\n"
+                                      if call == "get" else b"SERVER_ERROR boom")
+        assert await client.version() == b"1.2.3"
+        assert connections == 2
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
 
 
 DAY = 24 * 60 * 60
