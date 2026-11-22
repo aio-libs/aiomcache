@@ -10,7 +10,8 @@ import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
-from .conftest import McacheUnixParams
+from aiomcache.pool import MemcachePool
+from .conftest import McacheParams, McacheUnixParams
 from .flag_helper import FlagHelperDemo
 
 
@@ -535,6 +536,70 @@ async def test_key_of_250_bytes(mcache: Client, key: bytes) -> None:
     assert await mcache.set(key, b"v") is True
     assert await mcache.get(key) == b"v"
     assert await mcache.delete(key) is True
+
+
+_InvalidCall = Callable[[Client], Awaitable[object]]
+
+# A key with a space is rejected by the client, before it is sent.
+INVALID_CALLS: dict[str, _InvalidCall] = {
+    "get": lambda mc: mc.get(b"bad key"),
+    "gets": lambda mc: mc.gets(b"bad key"),
+    "multi_get": lambda mc: mc.multi_get(b"key:other", b"bad key"),
+    "set": lambda mc: mc.set(b"bad key", b"v"),
+    "add": lambda mc: mc.add(b"bad key", b"v"),
+    "replace": lambda mc: mc.replace(b"bad key", b"v"),
+    "append": lambda mc: mc.append(b"bad key", b"v"),
+    "prepend": lambda mc: mc.prepend(b"bad key", b"v"),
+    "cas": lambda mc: mc.cas(b"bad key", b"v", 1),
+    "delete": lambda mc: mc.delete(b"bad key"),
+    "incr": lambda mc: mc.incr(b"bad key"),
+    "decr": lambda mc: mc.decr(b"bad key"),
+    "touch": lambda mc: mc.touch(b"bad key", 10),
+    "str-key": lambda mc: mc.delete("key"),  # type: ignore[arg-type]
+    "set-negative-exptime": lambda mc: mc.set(b"key", b"v", exptime=-1),
+    "set-float-exptime": lambda mc: mc.set(b"key", b"v", exptime=1.5),  # type: ignore[arg-type]
+    "set-no-flag-handler": lambda mc: mc.set(b"key", object()),  # type: ignore[arg-type]
+}
+
+
+@pytest.mark.parametrize("call", ("get", "set-negative-exptime", "set-no-flag-handler"))
+async def test_validation_error_keeps_connection(
+    mcache_params: McacheParams, call: str
+) -> None:
+    # A rejected call must not close the pooled connection: memcached sees no
+    # new connection, even after another command runs.
+    client = Client(pool_size=1, **mcache_params)
+    try:
+        before = (await client.stats())[b"total_connections"]
+        with pytest.raises(ValidationException):
+            await INVALID_CALLS[call](client)
+        await client.get(b"key")
+        assert (await client.stats())[b"total_connections"] == before
+    finally:
+        await client.close()
+
+
+@pytest.mark.parametrize("call", INVALID_CALLS)
+async def test_validation_before_acquire(mcache: Client, call: str) -> None:
+    with mock.patch.object(MemcachePool, "acquire",
+                           side_effect=AssertionError("connection acquired")):
+        with pytest.raises(ValidationException):
+            await INVALID_CALLS[call](mcache)
+
+
+async def test_set_flag_handler_error_before_acquire(mcache_params: McacheParams) -> None:
+    # The set_flag_handler runs before a connection is taken.
+    async def failing_handler(value: object) -> tuple[bytes, int]:
+        raise ValueError("handler failed")
+
+    client = FlagClient[object](set_flag_handler=failing_handler, **mcache_params)
+    try:
+        with mock.patch.object(MemcachePool, "acquire",
+                               side_effect=AssertionError("connection acquired")):
+            with pytest.raises(ValueError, match="handler failed"):
+                await client.set(b"key", object())
+    finally:
+        await client.close()
 
 
 DAY = 24 * 60 * 60
