@@ -161,12 +161,12 @@ class FlagClient(Generic[_T]):
 
     @acquire
     async def _execute_simple_command(
-        self, conn: Connection, raw_command: bytes, *,
+        self, conn: Connection, *chunks: bytes,
         valid: Callable[[bytearray], bool], error: str,
     ) -> bytearray:
         response, line = bytearray(), b''
 
-        conn.writer.write(raw_command)
+        conn.writer.writelines(chunks)
         await conn.writer.drain()
 
         while not line.endswith(b'\r\n'):
@@ -382,11 +382,13 @@ class FlagClient(Generic[_T]):
                 raise ValidationException("flag handler must be set for non-byte values")
             value, flags = await self._set_flag_handler(value)
         cas_value = b" %a" % cas if cas else b""
-        cmd = b"%b %b %a %a %a%b\r\n%b\r\n" % (
-            command, key, flags, exptime, len(value), cas_value, value
+        # Only the header is built here; the value is written once a
+        # connection is held, so waiting calls don't keep a copy of it.
+        header = b"%b %b %a %a %a%b\r\n" % (
+            command, key, flags, exptime, len(value), cas_value
         )
         resp = await self._execute_simple_command(
-            cmd,
+            header, value, b"\r\n",
             valid=lambda r: r in (
                 const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND),
             error=f'stats {command.decode()} failed')

@@ -612,6 +612,19 @@ async def test_unexpected_reply_discards_connection(call: str) -> None:
         await server.wait_closed()
 
 
+async def test_storage_command_writes_value_without_copy(mcache: Client) -> None:
+    # The value is written as is once a connection is held, not copied into a
+    # full command while waiting for one.
+    value = b"x" * 100_000
+    writelines = asyncio.StreamWriter.writelines
+    with mock.patch.object(asyncio.StreamWriter, "writelines", autospec=True,
+                           side_effect=writelines) as spy:
+        assert await mcache.set(b"key:nocopy", value) is True
+    (_, chunks), _ = spy.call_args
+    assert any(chunk is value for chunk in chunks)
+    assert await mcache.get(b"key:nocopy") == value
+
+
 DAY = 24 * 60 * 60
 # memcached's last Unix timestamp: 2038-01-19 03:14:07 UTC.
 MAX_EXPTIME = 2**31 - 1
