@@ -123,7 +123,8 @@ class FlagClient(Generic[_T]):
         if isinstance(exptime, datetime.datetime):
             if exptime.utcoffset() is None:
                 raise ValidationException("exptime datetime must be timezone-aware", exptime)
-            # A timestamp <30 days from the epoch would be treated as relative by memcached.
+            # A timestamp less than this distance from the epoch would be treated as
+            # relative by memcached.
             timestamp = max(int(exptime.timestamp()), const.MAX_RELATIVE_EXPTIME + 1)
         elif isinstance(exptime, bool) or not isinstance(exptime, int):  # bool is an int
             raise ValidationException("exptime must be int or datetime", exptime)
