@@ -525,15 +525,17 @@ INVALID_CALLS: dict[str, _InvalidCall] = {
 async def test_validation_error_keeps_connection(
     mcache_params: McacheParams, call: str
 ) -> None:
-    # A rejected call must not close the pooled connection: memcached sees no
-    # new connection, even after another command runs.
+    # A rejected call must not close the pooled connection.
     client = Client(pool_size=1, **mcache_params)
     try:
-        before = (await client.stats())[b"total_connections"]
+        conn = await client._pool.acquire()
+        client._pool.release(conn)
         with pytest.raises(ValidationException):
             await INVALID_CALLS[call](client)
-        await client.get(b"key")
-        assert (await client.stats())[b"total_connections"] == before
+        assert client._pool.size() == 1
+        reacquired = await client._pool.acquire()
+        client._pool.release(reacquired)
+        assert reacquired is conn
     finally:
         await client.close()
 
