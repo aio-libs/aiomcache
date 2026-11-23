@@ -536,6 +536,7 @@ async def test_validation_error_keeps_connection(
         reacquired = await client._pool.acquire()
         client._pool.release(reacquired)
         assert reacquired is conn
+        assert not conn.writer.is_closing()
     finally:
         await client.close()
 
