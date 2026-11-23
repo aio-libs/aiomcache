@@ -1,10 +1,11 @@
 import asyncio
+import contextlib
 import datetime
 import functools
 import re
 import time
 import warnings
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from typing import Any, Concatenate, Generic, Literal, ParamSpec, TypeVar, overload
 
 from . import constants as const
@@ -30,18 +31,8 @@ def acquire(
     @functools.wraps(func)
     async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
                       **kwargs: _P.kwargs) -> _T:
-        async with asyncio.timeout(self._timeout):
-            conn = await self._pool.acquire()
-            # Assume the connection is unusable until the command completes.
-            # An interrupted command may have left part of its response unread.
-            broken = True
-            try:
-                result = await func(self, conn, *args, **kwargs)
-                broken = False
-            finally:
-                self._pool.release(conn, broken=broken)
-
-        return result
+        async with self._connection() as conn:
+            return await func(self, conn, *args, **kwargs)
 
     return wrapper
 
@@ -155,34 +146,45 @@ class FlagClient(Generic[_T]):
                 exptime)
         return timestamp
 
-    # Only the methods that talk to the server take a connection from the pool
-    # (@acquire). Public methods validate their arguments and build the request
-    # first, so invalid input never takes, or closes, a pooled connection.
+    # Only the methods that talk to the server take a connection from the pool.
+    # Public methods validate their arguments and build the request first, so
+    # invalid input never takes, or closes, a pooled connection.
 
-    @acquire
-    async def _execute_simple_command(
-        self, conn: Connection, *chunks: bytes,
-        valid: Callable[[bytearray], bool], error: str,
-    ) -> bytearray:
-        response, line = bytearray(), b''
+    @contextlib.asynccontextmanager
+    async def _connection(self) -> AsyncIterator[Connection]:
+        async with asyncio.timeout(self._timeout):
+            conn = await self._pool.acquire()
+            # Assume the connection is unusable until the command completes.
+            # An interrupted command may have left part of its response unread.
+            broken = True
+            try:
+                yield conn
+                broken = False
+            finally:
+                self._pool.release(conn, broken=broken)
 
-        conn.writer.writelines(chunks)
-        await conn.writer.drain()
+    @contextlib.asynccontextmanager
+    async def _execute_simple_command(self, *chunks: bytes) -> AsyncIterator[bytearray]:
+        """Send a command and yield its one-line reply.
 
-        while not line.endswith(b'\r\n'):
-            line = await conn.reader.readline()
-            if not line:
-                # readline() returns an empty string at EOF.
-                raise ClientException(
-                    'Connection closed by the server before receiving a full response',
-                )
-            response.extend(line)
-        response = response[:-2]
-        # Check the reply while the connection is held, so an unexpected
-        # reply discards the connection along with anything left unread.
-        if not valid(response):
-            raise ClientException(error, response)
-        return response
+        The connection is held until the block ends, so check the reply inside
+        it: an exception discards the connection along with anything unread.
+        """
+        async with self._connection() as conn:
+            response, line = bytearray(), b''
+
+            conn.writer.writelines(chunks)
+            await conn.writer.drain()
+
+            while not line.endswith(b'\r\n'):
+                line = await conn.reader.readline()
+                if not line:
+                    # readline() returns an empty string at EOF.
+                    raise ClientException(
+                        'Connection closed by the server before receiving a full response',
+                    )
+                response.extend(line)
+            yield response[:-2]
 
     async def close(self) -> None:
         """Closes the sockets if its open."""
@@ -269,10 +271,10 @@ class FlagClient(Generic[_T]):
         self._validate_key(key)
 
         command = b'delete ' + key + b'\r\n'
-        response = await self._execute_simple_command(
-            command, valid=lambda r: r in (const.DELETED, const.NOT_FOUND),
-            error='Memcached delete failed')
-        return response == const.DELETED
+        async with self._execute_simple_command(command) as response:
+            if response not in (const.DELETED, const.NOT_FOUND):
+                raise ClientException('Memcached delete failed', response)
+            return response == const.DELETED
 
     @overload
     async def get(self, key: bytes, default: None = ...) -> bytes | _T | None:
@@ -387,12 +389,10 @@ class FlagClient(Generic[_T]):
         header = b"%b %b %a %a %a%b\r\n" % (
             command, key, flags, exptime, len(value), cas_value
         )
-        resp = await self._execute_simple_command(
-            header, value, b"\r\n",
-            valid=lambda r: r in (
-                const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND),
-            error=f'stats {command.decode()} failed')
-        return resp == const.STORED
+        async with self._execute_simple_command(header, value, b"\r\n") as resp:
+            if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
+                raise ClientException(f'stats {command.decode()} failed', resp)
+            return resp == const.STORED
 
     async def set(self, key: bytes, value: bytes | _T,
                   exptime: int | datetime.datetime = 0) -> bool:
@@ -485,12 +485,12 @@ class FlagClient(Generic[_T]):
         self, command: bytes, key: bytes, delta: int
     ) -> int | None:
         cmd = b"%b %b %a\r\n" % (command, key, delta)
-        resp = await self._execute_simple_command(
-            cmd, valid=lambda r: r == const.NOT_FOUND or r.isdigit(),
-            error=f'Memcached {str(command)} command failed')
-        if resp == const.NOT_FOUND:
-            return None
-        return int(resp)
+        async with self._execute_simple_command(cmd) as resp:
+            if resp == const.NOT_FOUND:
+                return None
+            if not resp.isdigit():
+                raise ClientException(f'Memcached {str(command)} command failed', resp)
+            return int(resp)
 
     async def incr(self, key: bytes, increment: int = 1) -> int | None:
         """Command is used to change data for some item in-place,
@@ -539,10 +539,10 @@ class FlagClient(Generic[_T]):
         exptime = self._validate_exptime(exptime)
 
         cmd = b"touch %b %a\r\n" % (key, exptime)
-        resp = await self._execute_simple_command(
-            cmd, valid=lambda r: r in (const.TOUCHED, const.NOT_FOUND),
-            error='Memcached touch failed')
-        return resp == const.TOUCHED
+        async with self._execute_simple_command(cmd) as resp:
+            if resp not in (const.TOUCHED, const.NOT_FOUND):
+                raise ClientException('Memcached touch failed', resp)
+            return resp == const.TOUCHED
 
     async def version(self) -> bytearray:
         """Current version of the server.
@@ -551,18 +551,18 @@ class FlagClient(Generic[_T]):
         """
 
         command = b'version\r\n'
-        response = await self._execute_simple_command(
-            command, valid=lambda r: r.startswith(const.VERSION),
-            error='Memcached version failed')
+        async with self._execute_simple_command(command) as response:
+            if not response.startswith(const.VERSION):
+                raise ClientException('Memcached version failed', response)
         version, number = response.rstrip(b"\r\n").split(maxsplit=1)
         return number
 
     async def flush_all(self) -> None:
         """Its effect is to invalidate all existing items immediately"""
         command = b'flush_all\r\n'
-        await self._execute_simple_command(
-            command, valid=lambda r: r == const.OK,
-            error='Memcached flush_all failed')
+        async with self._execute_simple_command(command) as response:
+            if response != const.OK:
+                raise ClientException('Memcached flush_all failed', response)
 
 
 class Client(FlagClient[bytes]):

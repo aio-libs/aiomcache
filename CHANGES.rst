@@ -26,7 +26,8 @@ Unreleased
   no longer closes a pooled connection.
 - Private helpers (``_execute_simple_command()``, ``_multi_get()``,
   ``_storage_command()`` and ``_incr_decr()``) no longer take a ``conn``
-  argument; subclasses that call them need updating.
+  argument, and ``_execute_simple_command()`` is now an async context manager
+  that yields the reply; subclasses that call them need updating.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
 
