@@ -17,10 +17,11 @@ Unreleased
 - Deprecate passing a Unix timestamp as ``exptime``, in favour of a ``datetime``.
   An ``int`` which would end after 2038-01-19 03:14:07 UTC, the latest that
   memcached supports, as a number of seconds from now is still sent as a Unix
-  timestamp. So it still expires the item at once if that is in the past.
-- Raise ``ValidationException`` for an ``exptime`` which is a ``bool``, or is a
-  ``datetime`` or a Unix timestamp after 2038-01-19 03:14:07 UTC. ``touch()`` now
-  also raises it for a negative or non-int ``exptime``, as the storage commands do.
+  timestamp, unless that timestamp is in the past.
+- Raise ``ValidationException`` for an ``exptime`` which is a ``bool``, a Unix
+  timestamp in the past, or a ``datetime`` or Unix timestamp after 2038-01-19
+  03:14:07 UTC. ``touch()`` now also raises it for a negative or non-int
+  ``exptime``, as the storage commands do.
 
 0.8.2 (2024-05-07)
 ==================
