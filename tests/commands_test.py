@@ -615,6 +615,30 @@ async def test_unexpected_reply_discards_connection(call: str) -> None:
         await server.wait_closed()
 
 
+async def test_malformed_version_discards_connection() -> None:
+    # A reply that passes the prefix check but fails to parse must also
+    # discard the connection, so the leftover bytes are never read.
+    replies = [b"VERSION\r\nVERSION stale\r\n", b"VERSION 1.2.3\r\n"]
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        while await reader.readline():
+            writer.write(replies.pop(0))
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, pool_size=1)
+    try:
+        with pytest.raises(ValueError):
+            await client.version()
+        assert await client.version() == b"1.2.3"
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
 async def test_storage_command_writes_value_without_copy(mcache: Client) -> None:
     # The value is written as is once a connection is held, not copied into a
     # full command while waiting for one.

@@ -530,8 +530,8 @@ class FlagClient(Generic[_T]):
         async with self._execute_simple_command(command) as response:
             if not response.startswith(const.VERSION):
                 raise ClientException("Memcached version failed", response)
-        version, number = response.rstrip(b"\r\n").split(maxsplit=1)
-        return number
+            version, number = response.rstrip(b"\r\n").split(maxsplit=1)
+            return number
 
     async def flush_all(self) -> None:
         """Its effect is to invalidate all existing items immediately"""
