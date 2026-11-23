@@ -1,6 +1,7 @@
 import asyncio
 import random
 import socket
+from unittest import mock
 
 import pytest
 
@@ -64,6 +65,26 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     conn = await pool.acquire()
     assert conn is _conn
     assert pool.size() == 1
+    pool.release(conn)
+    await pool.clear()
+
+
+async def test_acquire_keeps_slot_when_reconnect_fails(
+    mcache_params: McacheParams,
+) -> None:
+    pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
+    conn = await pool.acquire()
+    pool.release(conn, broken=True)
+
+    with mock.patch.object(
+        MemcachePool, "_create_new_conn", side_effect=OSError("refused")
+    ):
+        with pytest.raises(OSError, match="refused"):
+            await pool.acquire()
+    # The failed reconnect puts its placeholder back instead of losing the slot.
+    assert pool.size() == 1
+
+    conn = await pool.acquire()
     pool.release(conn)
     await pool.clear()
 
