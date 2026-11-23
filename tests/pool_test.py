@@ -132,7 +132,7 @@ async def test_cancelled_command_does_not_poison_pool(
             async with self._connection() as conn:
                 # Send a complete request but only consume part of the response,
                 # leaving the rest of the reply in the stream.
-                conn.writer.write(b'get ' + key + b'\r\n')
+                conn.writer.write(b"get " + key + b"\r\n")
                 await conn.writer.drain()
                 await conn.reader.readline()
                 response_line_read.set()
