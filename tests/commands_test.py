@@ -256,7 +256,7 @@ async def test_prepend(mcache: Client) -> None:
     assert test_value4 is None
 
 
-@pytest.mark.parametrize("exptime", (-1, 3.14))
+@pytest.mark.parametrize("exptime", (-1, 3.14, True))
 async def test_append_prepend_errors(mcache: Client, exptime: Any) -> None:
     key = b"key:append_prepend"
 
@@ -570,34 +570,32 @@ def frozen_clock() -> Iterator[None]:
     (datetime.datetime(1969, 12, 31, tzinfo=UTC), 30 * DAY + 1),
 ))
 @pytest.mark.usefixtures("frozen_clock")
-async def test_validate_exptime(
-    mcache: Client, exptime: int | datetime.datetime, sent: int
-) -> None:
-    assert mcache._validate_exptime(exptime) == sent
+def test_validate_exptime(exptime: int | datetime.datetime, sent: int) -> None:
+    assert Client("127.0.0.1", 11211)._validate_exptime(exptime) == sent
 
 
-@pytest.mark.parametrize("exptime", (
-    MAX_EXPTIME - NOW + 1,  # The first to end after memcached's last timestamp.
-    NOW - 1,  # In the past, so the item expires at once.
-    MAX_EXPTIME,
-))
+@pytest.mark.parametrize("exptime", (NOW, MAX_EXPTIME))
 @pytest.mark.usefixtures("frozen_clock")
-async def test_validate_exptime_timestamp_deprecated(mcache: Client, exptime: int) -> None:
+def test_validate_exptime_timestamp_deprecated(exptime: int) -> None:
     with pytest.warns(DeprecationWarning):
-        assert mcache._validate_exptime(exptime) == exptime
+        assert Client("127.0.0.1", 11211)._validate_exptime(exptime) == exptime
 
 
 @pytest.mark.parametrize("exptime", (
     -1,
     MAX_EXPTIME + 1,
+    # Too long to be seconds from now, and in the past as a timestamp.
+    MAX_EXPTIME - NOW + 1,
+    NOW - 1,
     True,
     3.14,
     datetime.datetime(2030, 1, 1),  # Not timezone-aware.
     datetime.datetime(2038, 1, 19, 3, 14, 8, tzinfo=UTC),  # MAX_EXPTIME + 1
 ))
-async def test_validate_exptime_invalid(mcache: Client, exptime: Any) -> None:
+@pytest.mark.usefixtures("frozen_clock")
+def test_validate_exptime_invalid(exptime: Any) -> None:
     with pytest.raises(ValidationException):
-        mcache._validate_exptime(exptime)
+        Client("127.0.0.1", 11211)._validate_exptime(exptime)
 
 
 async def _add(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:

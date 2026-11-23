@@ -133,9 +133,14 @@ class FlagClient(Generic[_T]):
         elif exptime <= const.MAX_RELATIVE_EXPTIME:
             return exptime
         else:
-            timestamp = int(time.time()) + exptime
+            now = int(time.time())
+            timestamp = now + exptime
             if exptime <= const.MAX_EXPTIME < timestamp:
                 # Too long to be seconds from now, so it must be a timestamp itself.
+                if exptime < now:
+                    raise ValidationException(
+                        "exptime too large to be seconds from now, and in the past as a"
+                        " Unix timestamp", exptime)
                 warnings.warn(
                     "exptime is too large to be seconds from now, so is sent as a Unix"
                     " timestamp. This is deprecated: pass a timezone-aware datetime instead.",
@@ -355,7 +360,7 @@ class FlagClient(Generic[_T]):
 
         # Only append() and prepend() can fail this. memcached ignores their exptime,
         # so they don't use _validate_exptime().
-        if not isinstance(exptime, int):
+        if isinstance(exptime, bool) or not isinstance(exptime, int):  # bool is an int
             raise ValidationException('exptime not int', exptime)
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
