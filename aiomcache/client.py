@@ -1,12 +1,11 @@
 import asyncio
 import contextlib
 import datetime
-import functools
 import re
 import time
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
-from typing import Any, Concatenate, Generic, Literal, ParamSpec, TypeVar, overload
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from typing import Any, Generic, Literal, TypeVar, overload
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
@@ -14,27 +13,12 @@ from .pool import Connection, MemcachePool
 
 __all__ = ['Client']
 
-_P = ParamSpec("_P")
 _T = TypeVar("_T")
 _U = TypeVar("_U")
-_Client = TypeVar("_Client", bound="FlagClient[Any]")
 _Result = tuple[dict[bytes, bytes | _T], dict[bytes, _U]]
 
 _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
 _SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
-
-
-def acquire(
-    func: Callable[Concatenate[_Client, Connection, _P], Coroutine[None, None, _T]]
-) -> Callable[Concatenate[_Client, _P], Coroutine[None, None, _T]]:
-
-    @functools.wraps(func)
-    async def wrapper(self: _Client, *args: _P.args,  # type: ignore[misc]
-                      **kwargs: _P.kwargs) -> _T:
-        async with self._connection() as conn:
-            return await func(self, conn, *args, **kwargs)
-
-    return wrapper
 
 
 class FlagClient(Generic[_T]):
@@ -220,46 +204,46 @@ class FlagClient(Generic[_T]):
         cmd = b'gets ' if with_cas else b'get '
         return await self._retrieve(cmd + b' '.join(keys) + b'\r\n', len(keys), with_cas)
 
-    @acquire
-    async def _retrieve(self, conn: Connection, raw_command: bytes, n_keys: int,
+    async def _retrieve(self, raw_command: bytes, n_keys: int,
                         with_cas: bool) -> _Result[_T, int | None]:
-        conn.writer.write(raw_command)
+        async with self._connection() as conn:
+            conn.writer.write(raw_command)
 
-        received: dict[bytes, bytes | _T] = {}
-        cas_tokens: dict[bytes, int | None] = {}
-        line = await conn.reader.readline()
-
-        while line != b'END\r\n':
-            terms = line.split()
-
-            if terms and terms[0] == b"VALUE":  # exists
-                key = terms[1]
-                flags = int(terms[2])
-                length = int(terms[3])
-
-                val_bytes = (await conn.reader.readexactly(length+2))[:-2]
-                if key in received:
-                    raise ClientException('duplicate results from server')
-
-                if flags:
-                    if not self._get_flag_handler:
-                        raise ClientException("received flags without handler")
-
-                    val: bytes | _T = await self._get_flag_handler(val_bytes, flags)
-                else:
-                    val = val_bytes
-
-                received[key] = val
-                cas_tokens[key] = int(terms[4]) if with_cas else None
-            else:
-                raise ClientException('get failed', line)
-
+            received: dict[bytes, bytes | _T] = {}
+            cas_tokens: dict[bytes, int | None] = {}
             line = await conn.reader.readline()
 
-        if len(received) > n_keys:
-            raise ClientException('received too many responses')
+            while line != b'END\r\n':
+                terms = line.split()
 
-        return received, cas_tokens
+                if terms and terms[0] == b"VALUE":  # exists
+                    key = terms[1]
+                    flags = int(terms[2])
+                    length = int(terms[3])
+
+                    val_bytes = (await conn.reader.readexactly(length+2))[:-2]
+                    if key in received:
+                        raise ClientException('duplicate results from server')
+
+                    if flags:
+                        if not self._get_flag_handler:
+                            raise ClientException("received flags without handler")
+
+                        val: bytes | _T = await self._get_flag_handler(val_bytes, flags)
+                    else:
+                        val = val_bytes
+
+                    received[key] = val
+                    cas_tokens[key] = int(terms[4]) if with_cas else None
+                else:
+                    raise ClientException('get failed', line)
+
+                line = await conn.reader.readline()
+
+            if len(received) > n_keys:
+                raise ClientException('received too many responses')
+
+            return received, cas_tokens
 
     async def delete(self, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
@@ -321,10 +305,7 @@ class FlagClient(Generic[_T]):
         values, _ = await self._multi_get(*keys)
         return tuple(values.get(key) for key in keys)
 
-    @acquire
-    async def stats(
-        self, conn: Connection, args: bytes | None = None
-    ) -> dict[bytes, bytes | None]:
+    async def stats(self, args: bytes | None = None) -> dict[bytes, bytes | None]:
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
         # resp - STAT <name> <value>\r\n (one per result)
@@ -332,24 +313,25 @@ class FlagClient(Generic[_T]):
         if args is None:
             args = b''
 
-        conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
+        async with self._connection() as conn:
+            conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
 
-        result: dict[bytes, bytes | None] = {}
-
-        resp = await conn.reader.readline()
-        while resp != b'END\r\n':
-            terms = resp.split()
-
-            if len(terms) == 2 and terms[0] == b'STAT':
-                result[terms[1]] = None
-            elif len(terms) == 3 and terms[0] == b'STAT':
-                result[terms[1]] = terms[2]
-            elif len(terms) >= 3 and terms[0] == b'STAT':
-                result[terms[1]] = b' '.join(terms[2:])
-            else:
-                raise ClientException('stats failed', resp)
+            result: dict[bytes, bytes | None] = {}
 
             resp = await conn.reader.readline()
+            while resp != b'END\r\n':
+                terms = resp.split()
+
+                if len(terms) == 2 and terms[0] == b'STAT':
+                    result[terms[1]] = None
+                elif len(terms) == 3 and terms[0] == b'STAT':
+                    result[terms[1]] = terms[2]
+                elif len(terms) >= 3 and terms[0] == b'STAT':
+                    result[terms[1]] = b' '.join(terms[2:])
+                else:
+                    raise ClientException('stats failed', resp)
+
+                resp = await conn.reader.readline()
 
         return result
 

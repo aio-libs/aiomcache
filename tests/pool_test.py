@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from aiomcache.client import Client, acquire
+from aiomcache.client import Client
 from aiomcache.pool import Connection, MemcachePool
 from .conftest import McacheParams, McacheUnixParams
 
@@ -102,11 +102,11 @@ async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
                 minsize=pool_size, maxsize=pool_size,
                 **mcache_params)
 
-        @acquire
-        async def acquire_wait_release(self, conn: Connection) -> str:
-            assert self._pool.size() <= pool_size
-            await asyncio.sleep(random.uniform(0.01, 0.02))  # noqa: S311
-            return "foo"
+        async def acquire_wait_release(self) -> str:
+            async with self._connection():
+                assert self._pool.size() <= pool_size
+                await asyncio.sleep(random.uniform(0.01, 0.02))  # noqa: S311
+                return "foo"
 
     pool_size = 4
     client = TestClient(pool_size=pool_size)
@@ -128,15 +128,15 @@ async def test_cancelled_command_does_not_poison_pool(
     response_line_read = asyncio.Event()
 
     class CancellingClient(Client):
-        @acquire
-        async def get_then_cancel(self, conn: Connection, key: bytes) -> None:
-            # Send a complete request but only consume part of the response,
-            # leaving the rest of the reply in the stream.
-            conn.writer.write(b'get ' + key + b'\r\n')
-            await conn.writer.drain()
-            await conn.reader.readline()
-            response_line_read.set()
-            await asyncio.Event().wait()
+        async def get_then_cancel(self, key: bytes) -> None:
+            async with self._connection() as conn:
+                # Send a complete request but only consume part of the response,
+                # leaving the rest of the reply in the stream.
+                conn.writer.write(b'get ' + key + b'\r\n')
+                await conn.writer.drain()
+                await conn.reader.readline()
+                response_line_read.set()
+                await asyncio.Event().wait()
 
     client = CancellingClient(pool_size=1, **mcache_params)
     try:

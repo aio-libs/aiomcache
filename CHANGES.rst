@@ -27,7 +27,8 @@ Unreleased
 - Private helpers (``_execute_simple_command()``, ``_multi_get()``,
   ``_storage_command()`` and ``_incr_decr()``) no longer take a ``conn``
   argument, and ``_execute_simple_command()`` is now an async context manager
-  that yields the reply; subclasses that call them need updating.
+  that yields the reply; subclasses that call them need updating. The
+  ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
 
