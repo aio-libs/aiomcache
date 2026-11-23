@@ -130,10 +130,6 @@ class FlagClient(Generic[_T]):
                 exptime)
         return timestamp
 
-    # Only the methods that talk to the server take a connection from the pool.
-    # Public methods validate their arguments and build the request first, so
-    # invalid input never takes, or closes, a pooled connection.
-
     @contextlib.asynccontextmanager
     async def _connection(self) -> AsyncIterator[Connection]:
         async with asyncio.timeout(self._timeout):
@@ -155,17 +151,17 @@ class FlagClient(Generic[_T]):
         it: an exception discards the connection along with anything unread.
         """
         async with self._connection() as conn:
-            response, line = bytearray(), b''
+            response, line = bytearray(), b""
 
             conn.writer.writelines(chunks)
             await conn.writer.drain()
 
-            while not line.endswith(b'\r\n'):
+            while not line.endswith(b"\r\n"):
                 line = await conn.reader.readline()
                 if not line:
                     # readline() returns an empty string at EOF.
                     raise ClientException(
-                        'Connection closed by the server before receiving a full response',
+                        "Connection closed by the server before receiving a full response",
                     )
                 response.extend(line)
             yield response[:-2]
@@ -202,7 +198,7 @@ class FlagClient(Generic[_T]):
             raise ClientException('duplicate keys passed to multi_get')
 
         cmd = b'gets ' if with_cas else b'get '
-        return await self._retrieve(cmd + b' '.join(keys) + b'\r\n', len(keys), with_cas)
+        return await self._retrieve(cmd + b" ".join(keys) + b"\r\n", len(keys), with_cas)
 
     async def _retrieve(self, raw_command: bytes, n_keys: int,
                         with_cas: bool) -> _Result[_T, int | None]:
@@ -213,7 +209,7 @@ class FlagClient(Generic[_T]):
             cas_tokens: dict[bytes, int | None] = {}
             line = await conn.reader.readline()
 
-            while line != b'END\r\n':
+            while line != b"END\r\n":
                 terms = line.split()
 
                 if terms and terms[0] == b"VALUE":  # exists
@@ -223,7 +219,7 @@ class FlagClient(Generic[_T]):
 
                     val_bytes = (await conn.reader.readexactly(length+2))[:-2]
                     if key in received:
-                        raise ClientException('duplicate results from server')
+                        raise ClientException("duplicate results from server")
 
                     if flags:
                         if not self._get_flag_handler:
@@ -236,12 +232,12 @@ class FlagClient(Generic[_T]):
                     received[key] = val
                     cas_tokens[key] = int(terms[4]) if with_cas else None
                 else:
-                    raise ClientException('get failed', line)
+                    raise ClientException("get failed", line)
 
                 line = await conn.reader.readline()
 
             if len(received) > n_keys:
-                raise ClientException('received too many responses')
+                raise ClientException("received too many responses")
 
             return received, cas_tokens
 
@@ -257,7 +253,7 @@ class FlagClient(Generic[_T]):
         command = b'delete ' + key + b'\r\n'
         async with self._execute_simple_command(command) as response:
             if response not in (const.DELETED, const.NOT_FOUND):
-                raise ClientException('Memcached delete failed', response)
+                raise ClientException("Memcached delete failed", response)
             return response == const.DELETED
 
     @overload
@@ -292,9 +288,7 @@ class FlagClient(Generic[_T]):
         values, cas_tokens = await self._multi_get(key, with_cas=True)
         return values.get(key, default), cas_tokens.get(key)
 
-    async def multi_get(
-        self, *keys: bytes
-    ) -> tuple[bytes | _T | None, ...]:
+    async def multi_get(self, *keys: bytes) -> tuple[bytes | _T | None, ...]:
         """Takes a list of keys and returns a list of values.
 
         :param keys: ``list`` keys for the item being fetched.
@@ -314,22 +308,22 @@ class FlagClient(Generic[_T]):
             args = b''
 
         async with self._connection() as conn:
-            conn.writer.write(b''.join((b'stats ', args, b'\r\n')))
+            conn.writer.write(b"".join((b"stats ", args, b"\r\n")))
 
             result: dict[bytes, bytes | None] = {}
 
             resp = await conn.reader.readline()
-            while resp != b'END\r\n':
+            while resp != b"END\r\n":
                 terms = resp.split()
 
-                if len(terms) == 2 and terms[0] == b'STAT':
+                if len(terms) == 2 and terms[0] == b"STAT":
                     result[terms[1]] = None
-                elif len(terms) == 3 and terms[0] == b'STAT':
+                elif len(terms) == 3 and terms[0] == b"STAT":
                     result[terms[1]] = terms[2]
-                elif len(terms) >= 3 and terms[0] == b'STAT':
-                    result[terms[1]] = b' '.join(terms[2:])
+                elif len(terms) >= 3 and terms[0] == b"STAT":
+                    result[terms[1]] = b" ".join(terms[2:])
                 else:
-                    raise ClientException('stats failed', resp)
+                    raise ClientException("stats failed", resp)
 
                 resp = await conn.reader.readline()
 
@@ -373,7 +367,7 @@ class FlagClient(Generic[_T]):
         )
         async with self._execute_simple_command(header, value, b"\r\n") as resp:
             if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
-                raise ClientException(f'stats {command.decode()} failed', resp)
+                raise ClientException(f"stats {command.decode()} failed", resp)
             return resp == const.STORED
 
     async def set(self, key: bytes, value: bytes | _T,
@@ -471,7 +465,7 @@ class FlagClient(Generic[_T]):
             if resp == const.NOT_FOUND:
                 return None
             if not resp.isdigit():
-                raise ClientException(f'Memcached {str(command)} command failed', resp)
+                raise ClientException(f"Memcached {str(command)} command failed", resp)
             return int(resp)
 
     async def incr(self, key: bytes, increment: int = 1) -> int | None:
@@ -523,7 +517,7 @@ class FlagClient(Generic[_T]):
         cmd = b"touch %b %a\r\n" % (key, exptime)
         async with self._execute_simple_command(cmd) as resp:
             if resp not in (const.TOUCHED, const.NOT_FOUND):
-                raise ClientException('Memcached touch failed', resp)
+                raise ClientException("Memcached touch failed", resp)
             return resp == const.TOUCHED
 
     async def version(self) -> bytearray:
@@ -535,7 +529,7 @@ class FlagClient(Generic[_T]):
         command = b'version\r\n'
         async with self._execute_simple_command(command) as response:
             if not response.startswith(const.VERSION):
-                raise ClientException('Memcached version failed', response)
+                raise ClientException("Memcached version failed", response)
         version, number = response.rstrip(b"\r\n").split(maxsplit=1)
         return number
 
@@ -544,7 +538,7 @@ class FlagClient(Generic[_T]):
         command = b'flush_all\r\n'
         async with self._execute_simple_command(command) as response:
             if response != const.OK:
-                raise ClientException('Memcached flush_all failed', response)
+                raise ClientException("Memcached flush_all failed", response)
 
 
 class Client(FlagClient[bytes]):
