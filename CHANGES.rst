@@ -9,6 +9,19 @@ Unreleased
 - Limit keys to 250 bytes, as memcached does, instead of 250 characters. Longer
   non-ASCII keys now raise ``ValidationException`` instead of a misleading
   ``ClientException`` from the server.
+- Fix ``set()``, ``add()``, ``replace()``, ``cas()`` and ``touch()`` expiring the
+  item at once when ``exptime`` is over 30 days. memcached reads that as a Unix
+  timestamp, so the time at which it ends is now sent instead.
+- Accept a timezone-aware ``datetime`` as ``exptime``, to expire the item at that
+  time.
+- Deprecate passing a Unix timestamp as ``exptime``, in favour of a ``datetime``.
+  An ``int`` which would end after 2038-01-19 03:14:07 UTC, the latest that
+  memcached supports, as a number of seconds from now is still sent as a Unix
+  timestamp, unless that timestamp is in the past.
+- Raise ``ValidationException`` for an ``exptime`` which is a ``bool``, a Unix
+  timestamp in the past, or a ``datetime`` or Unix timestamp after 2038-01-19
+  03:14:07 UTC. ``touch()`` now also raises it for a negative or non-int
+  ``exptime``, as the storage commands do.
 
 0.8.2 (2024-05-07)
 ==================

@@ -1,6 +1,9 @@
 import asyncio
+import datetime
 import functools
 import re
+import time
+import warnings
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any, Concatenate, Generic, Literal, ParamSpec, TypeVar, overload
 
@@ -114,6 +117,43 @@ class FlagClient(Generic[_T]):
             raise ValidationException('invalid key', key)
 
         return key
+
+    def _validate_exptime(self, exptime: int | datetime.datetime) -> int:
+        """Return exptime as memcached expects it."""
+        if isinstance(exptime, datetime.datetime):
+            if exptime.utcoffset() is None:
+                raise ValidationException("exptime datetime must be timezone-aware", exptime)
+            # A timestamp less than this distance from the epoch would be treated as
+            # relative by memcached.
+            timestamp = max(int(exptime.timestamp()), const.MAX_RELATIVE_EXPTIME + 1)
+        elif isinstance(exptime, bool) or not isinstance(exptime, int):  # bool is an int
+            raise ValidationException("exptime must be int or datetime", exptime)
+        elif exptime < 0:
+            raise ValidationException("exptime negative", exptime)
+        elif exptime <= const.MAX_RELATIVE_EXPTIME:
+            return exptime
+        else:
+            now = int(time.time())
+            timestamp = now + exptime
+            if exptime <= const.MAX_EXPTIME < timestamp:
+                # Too long to be seconds from now, so it must be a timestamp itself.
+                if exptime < now:
+                    raise ValidationException(
+                        "exptime too large to be seconds from now, and in the past as a"
+                        " Unix timestamp", exptime)
+                warnings.warn(
+                    "exptime is too large to be seconds from now, so is sent as a Unix"
+                    " timestamp. This is deprecated: pass a timezone-aware datetime instead.",
+                    DeprecationWarning,
+                    stacklevel=4,  # The caller of the command, past acquire()'s wrapper.
+                )
+                timestamp = exptime
+
+        if timestamp > const.MAX_EXPTIME:
+            raise ValidationException(
+                "exptime after 2038-01-19 03:14:07 UTC, the latest memcached supports",
+                exptime)
+        return timestamp
 
     async def _execute_simple_command(self, conn: Connection, raw_command: bytes) -> bytearray:
         response, line = bytearray(), b''
@@ -318,7 +358,9 @@ class FlagClient(Generic[_T]):
         # so, we'll let the server decide what's too much
         self._validate_key(key)
 
-        if not isinstance(exptime, int):
+        # Only append() and prepend() can fail this. memcached ignores their exptime,
+        # so they don't use _validate_exptime().
+        if isinstance(exptime, bool) or not isinstance(exptime, int):  # bool is an int
             raise ValidationException('exptime not int', exptime)
         elif exptime < 0:
             raise ValidationException('exptime negative', exptime)
@@ -343,62 +385,70 @@ class FlagClient(Generic[_T]):
 
     @acquire
     async def set(self, conn: Connection, key: bytes, value: bytes | _T,
-                  exptime: int = 0) -> bool:
+                  exptime: int | datetime.datetime = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
-        :param exptime: ``int``, is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is the number of seconds until the item
+        expires. If it's 0, the item never expires. A timezone-aware
+        ``datetime`` is the time at which the item expires.
         :return: ``bool``, True in case of success.
         """
+        exptime = self._validate_exptime(exptime)
         return await self._storage_command(conn, b"set", key, value, exptime)
 
     @acquire
     async def cas(self, conn: Connection, key: bytes, value: bytes | _T, cas_token: int,
-                  exptime: int = 0) -> bool:
+                  exptime: int | datetime.datetime = 0) -> bool:
         """Sets a key to a value on the server
         with an optional exptime (0 means don't auto-expire)
         only if value hasn't changed from first retrieval
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
-        :param exptime: ``int``, is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is the number of seconds until the item
+        expires. If it's 0, the item never expires. A timezone-aware
+        ``datetime`` is the time at which the item expires.
         :param cas_token: ``int``, unique cas token retrieve from previous
             ``gets``
         :return: ``bool``, True in case of success.
         """
+        exptime = self._validate_exptime(exptime)
         return await self._storage_command(conn, b"cas", key, value, exptime,
                                            cas=cas_token)
 
     @acquire
     async def add(self, conn: Connection, key: bytes, value: bytes | _T,
-                  exptime: int = 0) -> bool:
+                  exptime: int | datetime.datetime = 0) -> bool:
         """Store this data, but only if the server *doesn't* already
         hold data for this key.
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
-        :param exptime: ``int`` is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is the number of seconds until the item
+        expires. If it's 0, the item never expires. A timezone-aware
+        ``datetime`` is the time at which the item expires.
         :return: ``bool``, True in case of success.
         """
+        exptime = self._validate_exptime(exptime)
         return await self._storage_command(conn, b"add", key, value, exptime)
 
     @acquire
     async def replace(self, conn: Connection, key: bytes, value: bytes | _T,
-                      exptime: int = 0) -> bool:
+                      exptime: int | datetime.datetime = 0) -> bool:
         """Store this data, but only if the server *does*
         already hold data for this key.
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
-        :param exptime: ``int`` is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is the number of seconds until the item
+        expires. If it's 0, the item never expires. A timezone-aware
+        ``datetime`` is the time at which the item expires.
         :return: ``bool``, True in case of success.
         """
+        exptime = self._validate_exptime(exptime)
         return await self._storage_command(conn, b"replace", key, value, exptime)
 
     @acquire
@@ -408,8 +458,8 @@ class FlagClient(Generic[_T]):
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``,  data to store.
-        :param exptime: ``int`` is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is ignored by memcached. The item keeps
+        its expiration time.
         :return: ``bool``, True in case of success.
         """
         return await self._storage_command(conn, b"append", key, value, exptime)
@@ -420,8 +470,8 @@ class FlagClient(Generic[_T]):
 
         :param key: ``bytes``, is the key of the item.
         :param value: ``bytes``, data to store.
-        :param exptime: ``int`` is expiration time. If it's 0, the
-        item never expires.
+        :param exptime: ``int``, is ignored by memcached. The item keeps
+        its expiration time.
         :return: ``bool``, True in case of success.
         """
         return await self._storage_command(conn, b"prepend", key, value, exptime)
@@ -473,16 +523,20 @@ class FlagClient(Generic[_T]):
         return await self._incr_decr(conn, b"decr", key, decrement)
 
     @acquire
-    async def touch(self, conn: Connection, key: bytes, exptime: int) -> bool:
+    async def touch(self, conn: Connection, key: bytes,
+                    exptime: int | datetime.datetime) -> bool:
         """The command is used to update the expiration time of
         an existing item without fetching it.
 
         :param key: ``bytes``, is the key to update expiration time
-        :param exptime: ``int``, is expiration time. This replaces the existing
-        expiration time.
+        :param exptime: ``int``, is the number of seconds until the item
+        expires. If it's 0, the item never expires. A timezone-aware
+        ``datetime`` is the time at which the item expires. This replaces
+        the existing expiration time.
         :return: ``bool``, True in case of success.
         """
         self._validate_key(key)
+        exptime = self._validate_exptime(exptime)
 
         cmd = b"touch %b %a\r\n" % (key, exptime)
         resp = await self._execute_simple_command(conn, cmd)

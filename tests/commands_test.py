@@ -1,6 +1,7 @@
 import asyncio
 import datetime
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -255,6 +256,17 @@ async def test_prepend(mcache: Client) -> None:
     assert test_value4 is None
 
 
+@pytest.mark.parametrize("exptime", (-1, 3.14, True))
+async def test_append_prepend_errors(mcache: Client, exptime: Any) -> None:
+    key = b"key:append_prepend"
+
+    with pytest.raises(ValidationException):
+        await mcache.append(key, b"2", exptime)
+
+    with pytest.raises(ValidationException):
+        await mcache.prepend(key, b"2", exptime)
+
+
 async def test_delete(mcache: Client) -> None:
     key, value = b'key:delete', b'value'
     await mcache.set(key, value)
@@ -367,6 +379,19 @@ async def test_touch(mcache: Client) -> None:
 
         with pytest.raises(ClientException):
             await mcache.touch(b"not:" + key, 1)
+
+
+async def test_touch_errors(mcache: Client) -> None:
+    key, value = b"key:touch:2", b"17"
+    await mcache.set(key, value)
+
+    with pytest.raises(ValidationException):
+        await mcache.touch(key, -1)
+
+    with pytest.raises(ValidationException):
+        await mcache.touch(key, 3.14)  # type: ignore[arg-type]
+
+    assert await mcache.get(key) == value
 
 
 async def test_close(mcache: Client) -> None:
@@ -510,3 +535,131 @@ async def test_key_of_250_bytes(mcache: Client, key: bytes) -> None:
     assert await mcache.set(key, b"v") is True
     assert await mcache.get(key) == b"v"
     assert await mcache.delete(key) is True
+
+
+DAY = 24 * 60 * 60
+# memcached's last Unix timestamp: 2038-01-19 03:14:07 UTC.
+MAX_EXPTIME = 2**31 - 1
+NOW = 1_800_000_000  # 2027-01-15 08:00:00 UTC
+UTC = datetime.UTC
+
+
+@pytest.fixture
+def frozen_clock() -> Iterator[None]:
+    """Stop the client's clock at NOW."""
+    with mock.patch("aiomcache.client.time") as time_mock:
+        time_mock.time.return_value = NOW + 0.5
+        yield
+
+
+@pytest.mark.parametrize(("exptime", "sent"), (
+    # Up to 30 days is sent as seconds from now.
+    (30 * DAY, 30 * DAY),
+    # memcached reads more as a Unix timestamp, so the one it ends at is sent.
+    (30 * DAY + 1, NOW + 30 * DAY + 1),
+    (MAX_EXPTIME - NOW, MAX_EXPTIME),
+    # A datetime is sent as its Unix timestamp.
+    (datetime.datetime(2030, 1, 1, tzinfo=UTC), 1893456000),
+    (datetime.datetime(2030, 1, 1, 1, tzinfo=datetime.timezone(datetime.timedelta(hours=1))),
+     1893456000),
+    (datetime.datetime(2038, 1, 19, 3, 14, 7, tzinfo=UTC), MAX_EXPTIME),
+    # memcached would read these as seconds from now, or as never for the epoch.
+    # They are in the past, so the first timestamp it reads as one is sent.
+    (datetime.datetime(1970, 1, 31, tzinfo=UTC), 30 * DAY + 1),
+    (datetime.datetime(1970, 1, 1, tzinfo=UTC), 30 * DAY + 1),
+    (datetime.datetime(1969, 12, 31, tzinfo=UTC), 30 * DAY + 1),
+))
+@pytest.mark.usefixtures("frozen_clock")
+def test_validate_exptime(exptime: int | datetime.datetime, sent: int) -> None:
+    assert Client("127.0.0.1", 11211)._validate_exptime(exptime) == sent
+
+
+@pytest.mark.parametrize("exptime", (NOW, MAX_EXPTIME))
+@pytest.mark.usefixtures("frozen_clock")
+def test_validate_exptime_timestamp_deprecated(exptime: int) -> None:
+    with pytest.warns(DeprecationWarning):
+        assert Client("127.0.0.1", 11211)._validate_exptime(exptime) == exptime
+
+
+@pytest.mark.parametrize("exptime", (
+    -1,
+    MAX_EXPTIME + 1,
+    # Too long to be seconds from now, and in the past as a timestamp.
+    MAX_EXPTIME - NOW + 1,
+    NOW - 1,
+    True,
+    3.14,
+    datetime.datetime(2030, 1, 1),  # Not timezone-aware.
+    datetime.datetime(2038, 1, 19, 3, 14, 8, tzinfo=UTC),  # MAX_EXPTIME + 1
+))
+@pytest.mark.usefixtures("frozen_clock")
+def test_validate_exptime_invalid(exptime: Any) -> None:
+    with pytest.raises(ValidationException):
+        Client("127.0.0.1", 11211)._validate_exptime(exptime)
+
+
+async def _add(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
+    await mc.delete(key)
+    return await mc.add(key, b"value", exptime)
+
+
+async def _replace(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
+    await mc.set(key, b"old")
+    return await mc.replace(key, b"value", exptime)
+
+
+async def _cas(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
+    await mc.set(key, b"old")
+    _, cas_token = await mc.gets(key)
+    assert cas_token is not None
+    return await mc.cas(key, b"value", cas_token, exptime)
+
+
+async def _touch(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
+    await mc.set(key, b"value")
+    return await mc.touch(key, exptime)
+
+
+# Each gives the key an item with a value of b"value" and the exptime.
+_ExptimeCommand = Callable[[Client, bytes, int | datetime.datetime], Awaitable[bool]]
+EXPTIME_COMMANDS: dict[str, _ExptimeCommand] = {
+    "set": lambda mc, k, exptime: mc.set(k, b"value", exptime),
+    "add": _add,
+    "replace": _replace,
+    "cas": _cas,
+    "touch": _touch,
+}
+
+
+@pytest.mark.parametrize("exptime", (
+    30 * DAY + 1,
+    datetime.datetime.now(UTC) + datetime.timedelta(days=31),
+), ids=("int", "datetime"))
+@pytest.mark.parametrize("command", EXPTIME_COMMANDS)
+async def test_exptime_over_30_days(
+    mcache: Client, command: str, exptime: int | datetime.datetime
+) -> None:
+    key = b"key:exptime:" + command.encode()
+    assert await EXPTIME_COMMANDS[command](mcache, key, exptime) is True
+    assert await mcache.get(key) == b"value"
+
+
+@pytest.mark.parametrize("exptime", (
+    datetime.datetime(2000, 1, 1, tzinfo=UTC),
+    datetime.datetime(1970, 1, 1, tzinfo=UTC),
+), ids=("2000", "epoch"))
+async def test_exptime_past_datetime(mcache: Client, exptime: datetime.datetime) -> None:
+    key = b"key:exptime:past"
+    assert await mcache.set(key, b"value", exptime) is True
+    assert await mcache.get(key) is None
+
+
+@pytest.mark.parametrize("command", EXPTIME_COMMANDS)
+async def test_exptime_timestamp_deprecated(mcache: Client, command: str) -> None:
+    key = b"key:exptime:" + command.encode()
+    timestamp = int(time.time()) + 31 * DAY
+    with pytest.warns(DeprecationWarning) as warned:
+        assert await EXPTIME_COMMANDS[command](mcache, key, timestamp) is True
+    # The warning must point to the caller of the command.
+    assert [w.filename for w in warned] == [__file__]
+    assert await mcache.get(key) == b"value"
