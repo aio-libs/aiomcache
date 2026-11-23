@@ -65,6 +65,10 @@ class MemcachePool:
 
         conn: Connection | None = None
         while not conn:
+            if self._pool.empty() and self.size() < self._maxsize:
+                # Every connection is busy: open another, up to maxsize.
+                conn = await self._create_new_conn()
+                continue
             self._waiting += 1
             try:
                 _conn = await self._pool.get()

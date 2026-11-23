@@ -11,6 +11,21 @@ from aiomcache.pool import Connection, MemcachePool
 from .conftest import McacheParams, McacheUnixParams
 
 
+def watch_pool_waits(
+    pool: MemcachePool, parked: asyncio.Queue[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Put "queue" in parked each time an acquire() blocks waiting for a
+    connection, so a test can order tasks without relying on the scheduler."""
+    queue_get = pool._pool.get
+
+    async def watched_get() -> Connection | None:
+        if pool._pool.empty():
+            parked.put_nowait("queue")
+        return await queue_get()
+
+    monkeypatch.setattr(pool._pool, "get", watched_get)
+
+
 async def test_pool_creation(mcache_params: McacheParams) -> None:
     pool = MemcachePool(minsize=1, maxsize=5, **mcache_params)
     assert pool.size() == 0
@@ -115,6 +130,39 @@ async def test_acquire_limit_maxsize(mcache_params: McacheParams) -> None:
     await pool.clear()
 
 
+async def test_acquire_grows_pool_up_to_maxsize(mcache_params: McacheParams) -> None:
+    pool = MemcachePool(minsize=1, maxsize=3, **mcache_params)
+
+    # Hold each connection, so a new one must be opened for the next acquire.
+    conns: list[Connection] = []
+    try:
+        for _ in range(3):
+            conns.append(await asyncio.wait_for(pool.acquire(), 5))
+        assert len(set(conns)) == 3
+        assert pool.size() == 3
+    finally:
+        for conn in conns:
+            pool.release(conn)
+        await pool.clear()
+
+
+async def test_client_uses_more_than_minsize_connections(mcache_params: McacheParams) -> None:
+    client = Client(pool_size=3, pool_minsize=1, **mcache_params)
+    try:
+        await client.get(b"key")
+        assert client._pool.size() == 1
+
+        # Keep the only connection busy, so the next command needs a second one.
+        busy = await client._pool.acquire()
+        try:
+            await asyncio.wait_for(client.get(b"key"), 5)
+            assert client._pool.size() == 2
+        finally:
+            client._pool.release(busy)
+    finally:
+        await client.close()
+
+
 async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
 
     class TestClient(Client):
@@ -215,6 +263,44 @@ async def test_concurrent_commands_open_at_most_pool_size_connections(
         assert opened == 4
         assert client._pool.size() == 2
     finally:
+        await client.close()
+
+
+async def test_concurrent_commands_grow_pool_beyond_minsize(
+    mcache_params: McacheParams, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = asyncio.Event()
+    parked: asyncio.Queue[str] = asyncio.Queue()
+    opened = 0
+    open_connection = asyncio.open_connection
+
+    async def gated_open_connection(
+        *args: Any, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        nonlocal opened
+        opened += 1
+        parked.put_nowait("connect")
+        await gate.wait()
+        return await open_connection(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "open_connection", gated_open_connection)
+    client = Client(pool_size=4, pool_minsize=1, **mcache_params)
+    watch_pool_waits(client._pool, parked, monkeypatch)
+    commands = [asyncio.ensure_future(client.get(b"key")) for _ in range(50)]
+    try:
+        async with asyncio.timeout(5):
+            # All four connections open at once; the other commands wait.
+            states = [await parked.get() for _ in range(len(commands))]
+            assert states.count("connect") == 4
+            assert states.count("queue") == 46
+            gate.set()
+            await asyncio.gather(*commands)
+        assert opened == 4
+        assert client._pool.size() == 4
+    finally:
+        for command in commands:
+            command.cancel()
+        await asyncio.gather(*commands, return_exceptions=True)
         await client.close()
 
 
