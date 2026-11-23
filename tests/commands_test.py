@@ -4,13 +4,13 @@ import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 from unittest import mock
-from unittest.mock import MagicMock
 
 import pytest
 
 from aiomcache import Client, FlagClient
 from aiomcache.exceptions import ClientException, ValidationException
-from .conftest import McacheUnixParams
+from aiomcache.pool import MemcachePool
+from .conftest import McacheParams, McacheUnixParams
 from .flag_helper import FlagHelperDemo
 
 
@@ -57,16 +57,6 @@ async def test_version(mcache: Client) -> None:
     stats = await mcache.stats()
     assert bytes(version) == stats[b'version']
 
-    with mock.patch.object(
-            mcache,
-            "_execute_simple_command",
-            new_callable=MagicMock) as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.version()
-
 
 async def test_flush_all(mcache: Client) -> None:
     key, value = b'key:flush_all', b'flush_all_value'
@@ -80,13 +70,6 @@ async def test_flush_all(mcache: Client) -> None:
     test_value = await mcache.get(key)
     assert test_value is None
 
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.flush_all()
-
 
 async def test_set_get(mcache: Client) -> None:
     key, value = b'key:set', b'1'
@@ -97,13 +80,6 @@ async def test_set_get(mcache: Client) -> None:
     assert test_value is None
     test_value = await mcache.get(b"not:" + key, default=value)
     assert test_value == value
-
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-        with pytest.raises(ClientException):
-            await mcache.set(key, value)
 
 
 async def test_gets(mcache: Client) -> None:
@@ -281,14 +257,6 @@ async def test_delete(mcache: Client) -> None:
     test_value = await mcache.get(key)
     assert test_value is None
 
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-
-        with pytest.raises(ClientException):
-            await mcache.delete(key)
-
 
 async def test_delete_key_not_exists(mcache: Client) -> None:
     is_deleted = await mcache.delete(b"not:key")
@@ -371,14 +339,6 @@ async def test_touch(mcache: Client) -> None:
 
     test_value4 = await mcache.touch(b"not:" + key, 1)
     assert not test_value4
-
-    with mock.patch.object(mcache, '_execute_simple_command') as patched:
-        fut: asyncio.Future[bytes] = asyncio.Future()
-        fut.set_result(b'SERVER_ERROR error\r\n')
-        patched.return_value = fut
-
-        with pytest.raises(ClientException):
-            await mcache.touch(b"not:" + key, 1)
 
 
 async def test_touch_errors(mcache: Client) -> None:
@@ -535,6 +495,161 @@ async def test_key_of_250_bytes(mcache: Client, key: bytes) -> None:
     assert await mcache.set(key, b"v") is True
     assert await mcache.get(key) == b"v"
     assert await mcache.delete(key) is True
+
+
+_InvalidCall = Callable[[Client], Awaitable[object]]
+
+# A key with a space is rejected by the client, before it is sent.
+INVALID_CALLS: dict[str, _InvalidCall] = {
+    "get": lambda mc: mc.get(b"bad key"),
+    "gets": lambda mc: mc.gets(b"bad key"),
+    "multi_get": lambda mc: mc.multi_get(b"key:other", b"bad key"),
+    "set": lambda mc: mc.set(b"bad key", b"v"),
+    "add": lambda mc: mc.add(b"bad key", b"v"),
+    "replace": lambda mc: mc.replace(b"bad key", b"v"),
+    "append": lambda mc: mc.append(b"bad key", b"v"),
+    "prepend": lambda mc: mc.prepend(b"bad key", b"v"),
+    "cas": lambda mc: mc.cas(b"bad key", b"v", 1),
+    "delete": lambda mc: mc.delete(b"bad key"),
+    "incr": lambda mc: mc.incr(b"bad key"),
+    "decr": lambda mc: mc.decr(b"bad key"),
+    "touch": lambda mc: mc.touch(b"bad key", 10),
+    "str-key": lambda mc: mc.delete("key"),  # type: ignore[arg-type]
+    "set-negative-exptime": lambda mc: mc.set(b"key", b"v", exptime=-1),
+    "set-float-exptime": lambda mc: mc.set(b"key", b"v", exptime=1.5),  # type: ignore[arg-type]
+    "set-no-flag-handler": lambda mc: mc.set(b"key", object()),  # type: ignore[arg-type]
+}
+
+
+@pytest.mark.parametrize("call", ("get", "set-negative-exptime", "set-no-flag-handler"))
+async def test_validation_error_keeps_connection(
+    mcache_params: McacheParams, call: str
+) -> None:
+    # A rejected call must not close the pooled connection.
+    client = Client(pool_size=1, **mcache_params)
+    try:
+        conn = await client._pool.acquire()
+        client._pool.release(conn)
+        with pytest.raises(ValidationException):
+            await INVALID_CALLS[call](client)
+        assert client._pool.size() == 1
+        reacquired = await client._pool.acquire()
+        client._pool.release(reacquired)
+        assert reacquired is conn
+        assert not conn.writer.is_closing()
+    finally:
+        await client.close()
+
+
+@pytest.mark.parametrize("call", INVALID_CALLS)
+async def test_validation_before_acquire(mcache: Client, call: str) -> None:
+    with mock.patch.object(MemcachePool, "acquire",
+                           side_effect=AssertionError("connection acquired")):
+        with pytest.raises(ValidationException):
+            await INVALID_CALLS[call](mcache)
+
+
+async def test_set_flag_handler_error_before_acquire(mcache_params: McacheParams) -> None:
+    # The set_flag_handler runs before a connection is taken.
+    async def failing_handler(value: object) -> tuple[bytes, int]:
+        raise ValueError("handler failed")
+
+    client = FlagClient[object](set_flag_handler=failing_handler, **mcache_params)
+    try:
+        with mock.patch.object(MemcachePool, "acquire",
+                               side_effect=AssertionError("connection acquired")):
+            with pytest.raises(ValueError, match="handler failed"):
+                await client.set(b"key", object())
+    finally:
+        await client.close()
+
+
+# An unexpected reply, followed by bytes the client must never read.
+UNEXPECTED_REPLY = b"SERVER_ERROR boom\r\nVERSION stale\r\n"
+UNEXPECTED_CALLS: dict[str, tuple[_InvalidCall, str]] = {
+    "delete": (lambda mc: mc.delete(b"key"), "Memcached delete failed"),
+    "set": (lambda mc: mc.set(b"key", b"v"), "stats set failed"),
+    "cas": (lambda mc: mc.cas(b"key", b"v", 1), "stats cas failed"),
+    "incr": (lambda mc: mc.incr(b"key"), "Memcached b'incr' command failed"),
+    "decr": (lambda mc: mc.decr(b"key"), "Memcached b'decr' command failed"),
+    "touch": (lambda mc: mc.touch(b"key", 1), "Memcached touch failed"),
+    "version": (lambda mc: mc.version(), "Memcached version failed"),
+    "flush_all": (lambda mc: mc.flush_all(), "Memcached flush_all failed"),
+    "get": (lambda mc: mc.get(b"key"), "get failed"),
+}
+
+
+@pytest.mark.parametrize("call", UNEXPECTED_CALLS)
+async def test_unexpected_reply_discards_connection(call: str) -> None:
+    # The first command gets an unexpected reply with extra bytes after it.
+    # The connection must be discarded, so the next command gets its own
+    # reply and not the leftover bytes.
+    connections = 0
+    first = True
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        nonlocal connections, first
+        connections += 1
+        while line := await reader.readline():
+            if line.split()[0] in (b"set", b"cas"):
+                await reader.readline()  # The data block.
+            writer.write(UNEXPECTED_REPLY if first else b"VERSION 1.2.3\r\n")
+            first = False
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, pool_size=1)
+    func, message = UNEXPECTED_CALLS[call]
+    try:
+        with pytest.raises(ClientException) as excinfo:
+            await func(client)
+        assert excinfo.value.args == (message, b"SERVER_ERROR boom\r\n"
+                                      if call == "get" else b"SERVER_ERROR boom")
+        assert await client.version() == b"1.2.3"
+        assert connections == 2
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
+async def test_malformed_version_discards_connection() -> None:
+    # A reply that passes the prefix check but fails to parse must also
+    # discard the connection, so the leftover bytes are never read.
+    replies = [b"VERSION\r\nVERSION stale\r\n", b"VERSION 1.2.3\r\n"]
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        while await reader.readline():
+            writer.write(replies.pop(0))
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, pool_size=1)
+    try:
+        with pytest.raises(ValueError):
+            await client.version()
+        assert await client.version() == b"1.2.3"
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
+async def test_storage_command_writes_value_without_copy(mcache: Client) -> None:
+    # The value is written as is once a connection is held, not copied into a
+    # full command while waiting for one.
+    value = b"x" * 100_000
+    writelines = asyncio.StreamWriter.writelines
+    with mock.patch.object(asyncio.StreamWriter, "writelines", autospec=True,
+                           side_effect=writelines) as spy:
+        assert await mcache.set(b"key:nocopy", value) is True
+    (_, chunks), _ = spy.call_args
+    assert any(chunk is value for chunk in chunks)
+    assert await mcache.get(b"key:nocopy") == value
 
 
 DAY = 24 * 60 * 60

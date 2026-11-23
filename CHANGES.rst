@@ -22,6 +22,15 @@ Unreleased
   timestamp in the past, or a ``datetime`` or Unix timestamp after 2038-01-19
   03:14:07 UTC. ``touch()`` now also raises it for a negative or non-int
   ``exptime``, as the storage commands do.
+- Validate arguments before taking a connection from the pool, so invalid input
+  no longer closes a pooled connection.
+- Private helpers (``_execute_simple_command()``, ``_multi_get()``,
+  ``_storage_command()`` and ``_incr_decr()``) no longer take a ``conn``
+  argument, and ``_execute_simple_command()`` is now an async context manager
+  that yields the reply; subclasses that call them need updating. The
+  ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
+- The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
+  before a connection is taken.
 
 0.8.2 (2024-05-07)
 ==================
