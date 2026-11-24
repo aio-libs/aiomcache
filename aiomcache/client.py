@@ -392,12 +392,13 @@ class FlagClient(Generic[_T]):
 
     async def multi_set(self, mapping: Mapping[bytes, bytes | _T],
                         exptime: int | datetime.datetime = 0) -> None:
-        """Sets several keys to values on the server, pipelining the
-        commands on one connection. The client's ``timeout`` covers waiting
-        for a connection and sending every batch, but not the flag handler,
-        which runs for every item first; its results are kept until the call
-        ends. After a timeout or cancellation, some items may still have been
-        stored.
+        """Set several keys to values on the server.
+
+        The commands are pipelined on one connection. The client's
+        ``timeout`` covers waiting for a connection and sending every batch,
+        but not the flag handler, which runs for every item first; its results
+        are kept until the call ends. After a timeout or cancellation, some
+        items may still have been stored.
 
         :param mapping: ``Mapping`` of ``bytes`` keys to the data to store.
         :param exptime: ``int``, is the number of seconds until the items
@@ -457,8 +458,10 @@ class FlagClient(Generic[_T]):
 
     async def _read_multi_set_replies(self, conn: Connection, keys: list[bytes],
                                       rejected: dict[bytes, bytes]) -> None:
-        """Read the replies to the set commands for keys, in order, and add
-        each key memcached rejected to rejected with its reply."""
+        """Read the replies to the set commands for keys, in order.
+
+        Add each key memcached rejected to rejected, with its reply.
+        """
         for key in keys:
             line = await conn.reader.readline()
             if not line.endswith(b"\r\n"):
