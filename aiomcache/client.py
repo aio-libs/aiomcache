@@ -393,9 +393,11 @@ class FlagClient(Generic[_T]):
     async def multi_set(self, mapping: Mapping[bytes, bytes | _T],
                         exptime: int | datetime.datetime = 0) -> None:
         """Sets several keys to values on the server, pipelining the
-        commands on one connection. The client's ``timeout`` covers the
-        whole call; after a timeout or cancellation, some items may still
-        have been stored.
+        commands on one connection. The client's ``timeout`` covers waiting
+        for a connection and sending every batch, but not the flag handler,
+        which runs for every item first; its results are kept until the call
+        ends. After a timeout or cancellation, some items may still have been
+        stored.
 
         :param mapping: ``Mapping`` of ``bytes`` keys to the data to store.
         :param exptime: ``int``, is the number of seconds until the items
