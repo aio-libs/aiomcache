@@ -96,9 +96,6 @@ class MemcachePool:
         broken = broken or conn.reader.at_eof() or conn.reader.exception() is not None
         released_conn: Connection | None = conn
         if broken:
-            # A command may have been interrupted with part of it still
-            # buffered. Sending it now would have memcached carry it out
-            # after the caller gave up on it.
             self._do_close(conn, abort=True)
             # None will wake a waiter so it can discard this slot and create a new conn.
             released_conn = None
