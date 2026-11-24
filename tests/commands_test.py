@@ -796,7 +796,8 @@ async def test_int_enum_arguments(mcache: Client) -> None:
     assert await mcache.touch(key, _TTL.HOUR)
     _, cas_token = await mcache.gets(key)
     assert cas_token is not None
-    assert await mcache.cas(key, b"other", cas_token, exptime=_TTL.HOUR)
+    CasToken = enum.IntEnum("CasToken", {"TOKEN": cas_token})
+    assert await mcache.cas(key, b"other", CasToken.TOKEN, exptime=_TTL.HOUR)
     assert await mcache.get(key) == b"other"
 
     await mcache.set(key, b"1")
@@ -819,3 +820,15 @@ async def test_int_flag_from_flag_handler(mcache_params: McacheParams) -> None:
         assert await client.get(b"key:int_flag") == "value"
     finally:
         await client.close()
+
+
+async def test_float_numbers_rejected(mcache: Client) -> None:
+    key = b"key:float_numbers"
+    await mcache.set(key, b"1")
+    with pytest.raises(ValidationException, match="delta not int"):
+        await mcache.incr(key, 2.5)  # type: ignore[arg-type]
+    with pytest.raises(ValidationException, match="delta not int"):
+        await mcache.decr(key, 0.5)  # type: ignore[arg-type]
+    with pytest.raises(ValidationException, match="cas token not int"):
+        await mcache.cas(key, b"2", 1.5)  # type: ignore[arg-type]
+    assert await mcache.get(key) == b"1"
