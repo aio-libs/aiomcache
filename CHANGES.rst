@@ -6,6 +6,10 @@ CHANGES
 
 Unreleased
 ==========
+- Add ``multi_set()`` to store several items, pipelined on one connection. It
+  raises ``ClientException`` if any item is not stored; when memcached rejects
+  only some (e.g. too large), the exception maps each rejected key to the
+  server's reply.
 - Limit keys to 250 bytes, as memcached does, instead of 250 characters. Longer
   non-ASCII keys now raise ``ValidationException`` instead of a misleading
   ``ClientException`` from the server.
