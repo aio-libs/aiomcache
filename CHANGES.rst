@@ -6,6 +6,9 @@ CHANGES
 
 Unreleased
 ==========
+- Drop what an interrupted command still had buffered when its connection is
+  discarded, instead of sending it. memcached could carry out a ``set()`` after
+  the caller got ``TimeoutError``.
 - Limit keys to 250 bytes, as memcached does, instead of 250 characters. Longer
   non-ASCII keys now raise ``ValidationException`` instead of a misleading
   ``ClientException`` from the server.
@@ -31,6 +34,12 @@ Unreleased
   ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
+- Count connections that are still opening towards ``pool_size``. Concurrent
+  commands on an empty pool, or after a connection is discarded, no longer
+  open one connection each.
+- Open new connections on demand up to ``pool_size`` when ``pool_minsize`` is
+  smaller. Before, once ``pool_minsize`` connections were open, a command that
+  found them all busy waited for one instead of opening another.
 - Send ``exptime``, flags, the cas token and the ``incr()``/``decr()`` delta in
   decimal, so an ``IntEnum`` or ``IntFlag`` is sent as its value instead of
   its ``repr()``. A ``float`` cas token, flags or delta now raises
