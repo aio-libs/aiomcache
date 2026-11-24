@@ -22,7 +22,6 @@ class MemcachePool:
         "_in_use",
         "_conn_timeout",
         "_connecting",
-        "_waiting",
     )
 
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
@@ -38,7 +37,6 @@ class MemcachePool:
         self._pool: asyncio.Queue[Connection | None] = asyncio.Queue()
         self._in_use: set[Connection] = set()
         self._connecting = 0
-        self._waiting = 0
 
     async def clear(self) -> None:
         """Clear pool connections."""
@@ -69,11 +67,7 @@ class MemcachePool:
                 # Every connection is busy: open another, up to maxsize.
                 conn = await self._create_new_conn()
                 continue
-            self._waiting += 1
-            try:
-                _conn = await self._pool.get()
-            finally:
-                self._waiting -= 1
+            _conn = await self._pool.get()
             if (
                 _conn is None
                 or _conn.reader.at_eof()
@@ -119,20 +113,13 @@ class MemcachePool:
             async with asyncio.timeout(self._conn_timeout):
                 reader, writer = await coro
         except BaseException:
-            # Hand the free slot to a waiting caller, so it tries to connect
+            # Keep the slot, so a waiting caller takes it and tries to connect
             # itself instead of waiting forever.
-            asyncio.get_running_loop().call_soon(self._wake_waiter)
+            self._pool.put_nowait(None)
             raise
         finally:
             self._connecting -= 1
         return Connection(reader, writer)
-
-    def _wake_waiter(self) -> None:
-        # Wake callers blocked in acquire() that no queued item will serve.
-        # Run on the next loop pass, so callers cancelled at the same time
-        # (for example by a shared deadline) have stopped waiting.
-        if self._waiting > self._pool.qsize() and self.size() < self._maxsize:
-            self._pool.put_nowait(None)
 
     def size(self) -> int:
         return self._pool.qsize() + len(self._in_use) + self._connecting
