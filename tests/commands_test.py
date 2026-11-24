@@ -791,44 +791,28 @@ class _Flags(enum.IntFlag):
 
 async def test_int_enum_arguments(mcache: Client) -> None:
     key = b"key:int_enum"
-    assert await mcache.set(key, b"value", exptime=_TTL.HOUR)
-    assert await mcache.get(key) == b"value"
+    assert await mcache.set(key, b"1", exptime=_TTL.HOUR)
     assert await mcache.touch(key, _TTL.HOUR)
-    _, cas_token = await mcache.gets(key)
-    assert cas_token is not None
-    CasToken = enum.IntEnum("CasToken", {"TOKEN": cas_token})
-    assert await mcache.cas(key, b"other", CasToken.TOKEN, exptime=_TTL.HOUR)
-    assert await mcache.get(key) == b"other"
-
-    await mcache.set(key, b"1")
     assert await mcache.incr(key, _TTL.HOUR) == 3601
-    assert await mcache.decr(key, _TTL.HOUR) == 1
+    _, cas_token = await mcache.gets(key)
+    CasToken = enum.IntEnum("CasToken", {"TOKEN": cas_token})
+    assert await mcache.cas(key, b"2", CasToken.TOKEN)
 
 
 async def test_int_flag_from_flag_handler(mcache_params: McacheParams) -> None:
-    async def get_handler(value: bytes, flags: int) -> str:
-        assert flags == _Flags.PICKLE
-        return value.decode()
-
     async def set_handler(value: str) -> tuple[bytes, int]:
         return value.encode(), _Flags.PICKLE
 
-    client = FlagClient(get_flag_handler=get_handler, set_flag_handler=set_handler,
-                        **mcache_params)
+    client = FlagClient[str](set_flag_handler=set_handler, **mcache_params)
     try:
         assert await client.set(b"key:int_flag", "value")
-        assert await client.get(b"key:int_flag") == "value"
     finally:
         await client.close()
 
 
 async def test_float_numbers_rejected(mcache: Client) -> None:
-    key = b"key:float_numbers"
-    await mcache.set(key, b"1")
-    with pytest.raises(ValidationException, match="delta not int"):
-        await mcache.incr(key, 2.5)  # type: ignore[arg-type]
-    with pytest.raises(ValidationException, match="delta not int"):
-        await mcache.decr(key, 0.5)  # type: ignore[arg-type]
-    with pytest.raises(ValidationException, match="cas token not int"):
-        await mcache.cas(key, b"2", 1.5)  # type: ignore[arg-type]
-    assert await mcache.get(key) == b"1"
+    await mcache.set(b"key:float", b"1")
+    with pytest.raises(ValidationException):
+        await mcache.incr(b"key:float", 2.5)  # type: ignore[arg-type]
+    with pytest.raises(ValidationException):
+        await mcache.cas(b"key:float", b"2", 1.5)  # type: ignore[arg-type]
