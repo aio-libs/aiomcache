@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import enum
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
@@ -778,3 +779,43 @@ async def test_exptime_timestamp_deprecated(mcache: Client, command: str) -> Non
     # The warning must point to the caller of the command.
     assert [w.filename for w in warned] == [__file__]
     assert await mcache.get(key) == b"value"
+
+
+class _TTL(enum.IntEnum):
+    HOUR = 3600
+
+
+class _Flags(enum.IntFlag):
+    PICKLE = 1
+
+
+async def test_int_enum_arguments(mcache: Client) -> None:
+    key = b"key:int_enum"
+    assert await mcache.set(key, b"value", exptime=_TTL.HOUR)
+    assert await mcache.get(key) == b"value"
+    assert await mcache.touch(key, _TTL.HOUR)
+    _, cas_token = await mcache.gets(key)
+    assert cas_token is not None
+    assert await mcache.cas(key, b"other", cas_token, exptime=_TTL.HOUR)
+    assert await mcache.get(key) == b"other"
+
+    await mcache.set(key, b"1")
+    assert await mcache.incr(key, _TTL.HOUR) == 3601
+    assert await mcache.decr(key, _TTL.HOUR) == 1
+
+
+async def test_int_flag_from_flag_handler(mcache_params: McacheParams) -> None:
+    async def get_handler(value: bytes, flags: int) -> str:
+        assert flags == _Flags.PICKLE
+        return value.decode()
+
+    async def set_handler(value: str) -> tuple[bytes, int]:
+        return value.encode(), _Flags.PICKLE
+
+    client = FlagClient(get_flag_handler=get_handler, set_flag_handler=set_handler,
+                        **mcache_params)
+    try:
+        assert await client.set(b"key:int_flag", "value")
+        assert await client.get(b"key:int_flag") == "value"
+    finally:
+        await client.close()

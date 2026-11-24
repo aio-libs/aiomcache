@@ -31,6 +31,9 @@ Unreleased
   ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
+- Send ``exptime``, flags, the cas token and the ``incr()``/``decr()`` delta in
+  decimal, so an ``IntEnum`` or ``IntFlag`` is sent as its value instead of
+  its ``repr()``.
 
 0.8.2 (2024-05-07)
 ==================
