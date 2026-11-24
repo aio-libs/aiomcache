@@ -249,6 +249,10 @@ async def test_broken_connection_drops_buffered_writes() -> None:
     port = server.sockets[0].getsockname()[1]
     client = Client("127.0.0.1", port, timeout=0.2)
     try:
+        # Open the connection first, so set() buffers its write at once and
+        # the deadline can't expire before anything is sent.
+        conn = await client._pool.acquire()
+        client._pool.release(conn)
         with pytest.raises(TimeoutError):
             await client.set(b"key", value)
         released.set()
