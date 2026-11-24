@@ -1,6 +1,8 @@
 import asyncio
 import random
 import socket
+from collections.abc import Sequence
+from typing import Any, NoReturn
 from unittest import mock
 
 import pytest
@@ -8,6 +10,28 @@ import pytest
 from aiomcache.client import Client
 from aiomcache.pool import Connection, MemcachePool
 from .conftest import McacheParams, McacheUnixParams
+
+
+def watch_pool_waits(
+    pool: MemcachePool, parked: asyncio.Queue[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Put "queue" in parked each time an acquire() blocks waiting for a
+    connection, so a test can order tasks without relying on the scheduler."""
+    queue_get = pool._pool.get
+
+    async def watched_get() -> Connection | None:
+        if pool._pool.empty():
+            parked.put_nowait("queue")
+        return await queue_get()
+
+    monkeypatch.setattr(pool._pool, "get", watched_get)
+
+
+async def cancel_all(tasks: Sequence[asyncio.Future[Any]]) -> None:
+    """Cancel tasks a test started and wait for them, so none is left behind."""
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def test_pool_creation(mcache_params: McacheParams) -> None:
@@ -69,7 +93,7 @@ async def test_acquire_dont_create_new_connection_if_have_conn_in_pool(
     await pool.clear()
 
 
-async def test_acquire_keeps_slot_when_reconnect_fails(
+async def test_acquire_recovers_when_reconnect_fails(
     mcache_params: McacheParams,
 ) -> None:
     pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
@@ -81,8 +105,8 @@ async def test_acquire_keeps_slot_when_reconnect_fails(
     ):
         with pytest.raises(OSError, match="refused"):
             await pool.acquire()
-    # The failed reconnect puts its placeholder back instead of losing the slot.
-    assert pool.size() == 1
+    # The failed reconnect isn't counted, so the next acquire() opens one.
+    assert pool.size() == 0
 
     conn = await pool.acquire()
     pool.release(conn)
@@ -112,6 +136,39 @@ async def test_acquire_limit_maxsize(mcache_params: McacheParams) -> None:
     assert len(pool._in_use) == 0
     assert pool._pool.qsize() == 1
     await pool.clear()
+
+
+async def test_acquire_grows_pool_up_to_maxsize(mcache_params: McacheParams) -> None:
+    pool = MemcachePool(minsize=1, maxsize=3, **mcache_params)
+
+    # Hold each connection, so a new one must be opened for the next acquire.
+    conns: list[Connection] = []
+    try:
+        for _ in range(3):
+            conns.append(await asyncio.wait_for(pool.acquire(), 5))
+        assert len(set(conns)) == 3
+        assert pool.size() == 3
+    finally:
+        for conn in conns:
+            pool.release(conn)
+        await pool.clear()
+
+
+async def test_client_uses_more_than_minsize_connections(mcache_params: McacheParams) -> None:
+    client = Client(pool_size=3, pool_minsize=1, **mcache_params)
+    try:
+        await client.get(b"key")
+        assert client._pool.size() == 1
+
+        # Keep the only connection busy, so the next command needs a second one.
+        busy = await client._pool.acquire()
+        try:
+            await asyncio.wait_for(client.get(b"key"), 5)
+            assert client._pool.size() == 2
+        finally:
+            client._pool.release(busy)
+    finally:
+        await client.close()
 
 
 async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
@@ -184,6 +241,178 @@ async def test_cancelled_command_does_not_poison_pool(
         await client.close()
 
 
+async def test_concurrent_commands_open_at_most_pool_size_connections(
+    mcache_params: McacheParams, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = asyncio.Event()
+    parked = asyncio.Queue[str]()
+    open_connection = asyncio.open_connection
+
+    async def gated_open_connection(
+        *args: Any, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        parked.put_nowait("connect")
+        await gate.wait()
+        return await open_connection(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "open_connection", gated_open_connection)
+    client = Client(pool_size=2, pool_minsize=1, **mcache_params)
+    watch_pool_waits(client._pool, parked, monkeypatch)
+    commands = [asyncio.create_task(client.get(b"key")) for _ in range(50)]
+    try:
+        async with asyncio.timeout(5):
+            # Both connections open at once, beyond pool_minsize; the other
+            # commands wait for them.
+            states = [await parked.get() for _ in commands]
+            assert states.count("connect") == 2
+            assert states.count("queue") == 48
+            gate.set()
+            await asyncio.gather(*commands)
+            assert client._pool.size() == 2
+
+            # Lose every connection, as after a server restart, a network error
+            # or a cancelled or timed-out command.
+            gate.clear()
+            conns = [await client._pool.acquire() for _ in range(2)]
+            for conn in conns:
+                conn.reader.feed_eof()
+                client._pool.release(conn)
+            commands += [asyncio.create_task(client.get(b"key")) for _ in range(50)]
+            states = [await parked.get() for _ in range(50)]
+            assert states.count("connect") == 2
+            assert states.count("queue") == 48
+            gate.set()
+            await asyncio.gather(*commands)
+            assert client._pool.size() == 2
+    finally:
+        await cancel_all(commands)
+        await client.close()
+
+
+async def test_concurrent_acquire_bad_connection(
+    mcache_params: McacheParams, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = asyncio.Event()
+    parked = asyncio.Queue[str]()
+    calls = 0
+
+    async def failing_open_connection(*args: Any, **kwargs: Any) -> NoReturn:
+        nonlocal calls
+        calls += 1
+        parked.put_nowait("connect")
+        await gate.wait()
+        raise ConnectionRefusedError("server down")
+
+    monkeypatch.setattr(asyncio, "open_connection", failing_open_connection)
+    pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
+    watch_pool_waits(pool, parked, monkeypatch)
+    acquires = [asyncio.create_task(pool.acquire()) for _ in range(5)]
+    try:
+        async with asyncio.timeout(5):
+            # One caller connects; the others wait for its connection.
+            states = [await parked.get() for _ in acquires]
+            assert states == ["connect"] + ["queue"] * 4
+            gate.set()
+            results = await asyncio.gather(*acquires, return_exceptions=True)
+        # Each failure hands the slot to a waiter, which then tries to connect
+        # itself: every caller gets the error and none is left waiting.
+        assert all(isinstance(r, ConnectionRefusedError) for r in results)
+        assert calls == 5
+        # The last failure leaves its slot for the next acquire().
+        assert pool.size() == 1
+    finally:
+        await cancel_all(acquires)
+        await pool.clear()
+
+
+async def test_cancelled_connect(
+    mcache_params: McacheParams, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = asyncio.Event()
+    parked = asyncio.Queue[str]()
+    open_connection = asyncio.open_connection
+
+    async def gated_open_connection(
+        *args: Any, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        parked.put_nowait("connect")
+        await gate.wait()
+        return await open_connection(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "open_connection", gated_open_connection)
+    pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
+    watch_pool_waits(pool, parked, monkeypatch)
+    acquires: list[asyncio.Future[Connection]] = []
+    try:
+        async with asyncio.timeout(5):
+            # A command waiting for a connection that is cancelled while it
+            # opens still gets a connection, which it opens itself.
+            connecting = asyncio.create_task(pool.acquire())
+            acquires.append(connecting)
+            assert await parked.get() == "connect"
+            waiting = asyncio.create_task(pool.acquire())
+            acquires.append(waiting)
+            assert await parked.get() == "queue"
+            connecting.cancel()
+            gate.set()
+            conn = await waiting
+            assert parked.get_nowait() == "connect"
+            assert parked.empty()
+            assert pool.size() == 1
+            pool.release(conn)
+    finally:
+        await cancel_all(acquires)
+        await pool.clear()
+
+
+async def test_failed_reconnect_does_not_exceed_pool_size(
+    mcache_params: McacheParams, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MemcachePool(minsize=1, maxsize=1, **mcache_params)
+    conn = await pool.acquire()
+    conn.reader.feed_eof()
+    pool.release(conn)  # Discarded, so the next acquire() reconnects.
+
+    spare = await asyncio.open_connection(mcache_params["host"], mcache_params["port"])
+    gate = asyncio.Event()
+    calls = 0
+    parked = asyncio.Queue[str]()
+
+    async def first_open_fails(
+        *args: Any, **kwargs: Any
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        nonlocal calls
+        calls += 1
+        parked.put_nowait("connect")
+        if calls == 1:
+            await gate.wait()
+            raise ConnectionRefusedError("server down")
+        return spare
+
+    monkeypatch.setattr(asyncio, "open_connection", first_open_fails)
+    watch_pool_waits(pool, parked, monkeypatch)
+    acquires: list[asyncio.Future[Connection]] = []
+    try:
+        async with asyncio.timeout(5):
+            reconnecting = asyncio.create_task(pool.acquire())
+            acquires.append(reconnecting)
+            assert await parked.get() == "connect"
+            other = asyncio.create_task(pool.acquire())
+            acquires.append(other)
+            assert await parked.get() == "queue"
+            gate.set()
+            with pytest.raises(ConnectionRefusedError):
+                await reconnecting
+            conn = await other
+        assert calls == 2
+        assert pool.size() == 1
+        pool.release(conn)
+    finally:
+        await cancel_all(acquires)
+        await pool.clear()
+        spare[1].close()
+
+
 async def test_maxsize_greater_than_minsize(mcache_params: McacheParams) -> None:
     pool = MemcachePool(minsize=5, maxsize=1, **mcache_params)
     conn = await pool.acquire()
@@ -207,7 +436,11 @@ async def test_bad_connection() -> None:
     assert pool.size() == 0
     with pytest.raises(socket.gaierror):
         await pool.acquire()
-    assert pool.size() == 0
+    # The failed connection's slot is kept for the next acquire() to retry.
+    assert pool.size() == 1
+    with pytest.raises(socket.gaierror):
+        await pool.acquire()
+    assert pool.size() == 1
 
 
 async def test_pool_unix_socket_acquire_release(

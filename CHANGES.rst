@@ -31,6 +31,12 @@ Unreleased
   ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
+- Count connections that are still opening towards ``pool_size``. Concurrent
+  commands on an empty pool, or after a connection is discarded, no longer
+  open one connection each.
+- Open new connections on demand up to ``pool_size`` when ``pool_minsize`` is
+  smaller. Before, once ``pool_minsize`` connections were open, a command that
+  found them all busy waited for one instead of opening another.
 
 0.8.2 (2024-05-07)
 ==================

@@ -21,6 +21,7 @@ class MemcachePool:
         "_pool",
         "_in_use",
         "_conn_timeout",
+        "_connecting",
     )
 
     def __init__(self, host: str, port: int, *, minsize: int, maxsize: int,
@@ -35,6 +36,7 @@ class MemcachePool:
 
         self._pool: asyncio.Queue[Connection | None] = asyncio.Queue()
         self._in_use: set[Connection] = set()
+        self._connecting = 0
 
     async def clear(self) -> None:
         """Clear pool connections."""
@@ -61,6 +63,10 @@ class MemcachePool:
 
         conn: Connection | None = None
         while not conn:
+            if self._pool.empty() and self.size() < self._maxsize:
+                # Every connection is busy: open another, up to maxsize.
+                conn = await self._create_new_conn()
+                continue
             _conn = await self._pool.get()
             if (
                 _conn is None
@@ -69,11 +75,7 @@ class MemcachePool:
             ):
                 if _conn is not None:
                     self._do_close(_conn)
-                try:
-                    conn = await self._create_new_conn()
-                except BaseException:
-                    self._pool.put_nowait(None)
-                    raise
+                conn = await self._create_new_conn()
             else:
                 conn = _conn
 
@@ -98,22 +100,26 @@ class MemcachePool:
         self._pool.put_nowait(released_conn)
 
     async def _create_new_conn(self) -> Connection | None:
-        if self.size() < self._maxsize:
+        if self.size() >= self._maxsize:
+            return None
+        # Count the connection while it opens, so concurrent callers
+        # wait for it instead of opening more than maxsize.
+        self._connecting += 1
+        try:
             if self._port == -1:  # -1 implies unix socket
                 coro = asyncio.open_unix_connection(self._target, **self.conn_args)
             else:
                 coro = asyncio.open_connection(self._target, self._port, **self.conn_args)
             async with asyncio.timeout(self._conn_timeout):
                 reader, writer = await coro
-
-            if self.size() < self._maxsize:
-                return Connection(reader, writer)
-            else:
-                reader.feed_eof()
-                writer.close()
-                return None
-        else:
-            return None
+        except BaseException:
+            # Keep the slot, so a waiting caller takes it and tries to connect
+            # itself instead of waiting forever.
+            self._pool.put_nowait(None)
+            raise
+        finally:
+            self._connecting -= 1
+        return Connection(reader, writer)
 
     def size(self) -> int:
-        return self._pool.qsize() + len(self._in_use)
+        return self._pool.qsize() + len(self._in_use) + self._connecting
