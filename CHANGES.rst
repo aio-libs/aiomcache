@@ -6,6 +6,9 @@ CHANGES
 
 Unreleased
 ==========
+- Drop what an interrupted command still had buffered when its connection is
+  discarded, instead of sending it. memcached could carry out a ``set()`` after
+  the caller got ``TimeoutError``.
 - Limit keys to 250 bytes, as memcached does, instead of 250 characters. Longer
   non-ASCII keys now raise ``ValidationException`` instead of a misleading
   ``ClientException`` from the server.

@@ -226,3 +226,36 @@ async def test_pool_unix_socket_bad_path() -> None:
     assert pool.size() == 0
     with pytest.raises(FileNotFoundError):
         await pool.acquire()
+
+
+async def test_broken_connection_drops_buffered_writes() -> None:
+    # A command that timed out may still have data buffered. It must not be
+    # sent once the connection is discarded, or memcached would carry it out.
+    value = b"x" * 16 * 1024 * 1024
+    received = 0
+    released = asyncio.Event()
+    done = asyncio.Event()
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        nonlocal received
+        await released.wait()  # Don't read until the connection is released.
+        while data := await reader.read(1024 * 1024):
+            received += len(data)
+        writer.close()
+        done.set()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, timeout=0.2)
+    try:
+        with pytest.raises(TimeoutError):
+            await client.set(b"key", value)
+        released.set()
+        async with asyncio.timeout(10):
+            await done.wait()
+        assert received < len(value)
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()

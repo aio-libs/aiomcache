@@ -43,9 +43,13 @@ class MemcachePool:
             if conn is not None:
                 self._do_close(conn)
 
-    def _do_close(self, conn: Connection) -> None:
+    def _do_close(self, conn: Connection, *, abort: bool = False) -> None:
         conn.reader.feed_eof()
-        conn.writer.close()
+        if abort:
+            # Drop anything still buffered instead of sending it.
+            conn.writer.transport.abort()
+        else:
+            conn.writer.close()
 
     async def acquire(self) -> Connection:
         """Acquire connection from the pool, or spawn new one
@@ -92,7 +96,10 @@ class MemcachePool:
         broken = broken or conn.reader.at_eof() or conn.reader.exception() is not None
         released_conn: Connection | None = conn
         if broken:
-            self._do_close(conn)
+            # A command may have been interrupted with part of it still
+            # buffered. Sending it now would have memcached carry it out
+            # after the caller gave up on it.
+            self._do_close(conn, abort=True)
             # None will wake a waiter so it can discard this slot and create a new conn.
             released_conn = None
         self._pool.put_nowait(released_conn)
