@@ -6,6 +6,12 @@ CHANGES
 
 Unreleased
 ==========
+- Keep the connection after an error reply which the next reply can be read
+  after, instead of discarding it: ``SERVER_ERROR object too large for cache``,
+  and ``CLIENT_ERROR`` or ``ERROR`` in reply to a command which sends no data.
+- Call ``get_flag_handler`` once the whole reply is read and the connection is
+  back in the pool. The ``timeout`` option no longer covers it, and it no longer
+  discards the connection by raising.
 - Drop what an interrupted command still had buffered when its connection is
   discarded, instead of sending it. memcached could carry out a ``set()`` after
   the caller got ``TimeoutError``.
@@ -29,9 +35,11 @@ Unreleased
   no longer closes a pooled connection.
 - Private helpers (``_execute_simple_command()``, ``_multi_get()``,
   ``_storage_command()`` and ``_incr_decr()``) no longer take a ``conn``
-  argument, and ``_execute_simple_command()`` is now an async context manager
-  that yields the reply; subclasses that call them need updating. The
-  ``@acquire`` decorator is removed; use ``async with self._connection() as conn:``.
+  argument, and ``_execute_simple_command()`` now takes a ``parse`` function
+  for the reply and returns its result; subclasses that call them need updating.
+  The ``@acquire`` decorator is removed; use ``self._execute()``, which takes a
+  request and a function to read its reply, or
+  ``async with self._connection() as conn:``.
 - The ``timeout`` option no longer covers ``set_flag_handler``, which now runs
   before a connection is taken.
 - Count connections that are still opening towards ``pool_size``. Concurrent

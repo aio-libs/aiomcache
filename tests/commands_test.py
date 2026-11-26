@@ -565,7 +565,7 @@ async def test_set_flag_handler_error_before_acquire(mcache_params: McacheParams
 
 
 # An unexpected reply, followed by bytes the client must never read.
-UNEXPECTED_REPLY = b"SERVER_ERROR boom\r\nVERSION stale\r\n"
+UNEXPECTED_REPLY = b"UNEXPECTED boom\r\nVERSION stale\r\n"
 UNEXPECTED_CALLS: dict[str, tuple[_InvalidCall, str]] = {
     "delete": (lambda mc: mc.delete(b"key"), "Memcached delete failed"),
     "set": (lambda mc: mc.set(b"key", b"v"), "stats set failed"),
@@ -576,6 +576,7 @@ UNEXPECTED_CALLS: dict[str, tuple[_InvalidCall, str]] = {
     "version": (lambda mc: mc.version(), "Memcached version failed"),
     "flush_all": (lambda mc: mc.flush_all(), "Memcached flush_all failed"),
     "get": (lambda mc: mc.get(b"key"), "get failed"),
+    "stats": (lambda mc: mc.stats(), "stats failed"),
 }
 
 
@@ -605,14 +606,102 @@ async def test_unexpected_reply_discards_connection(call: str) -> None:
     try:
         with pytest.raises(ClientException) as excinfo:
             await func(client)
-        assert excinfo.value.args == (message, b"SERVER_ERROR boom\r\n"
-                                      if call == "get" else b"SERVER_ERROR boom")
+        assert excinfo.value.args == (message, b"UNEXPECTED boom\r\n"
+                                      if call in ("get", "stats") else b"UNEXPECTED boom")
         assert await client.version() == b"1.2.3"
         assert connections == 2
     finally:
         await client.close()
         server.close()
         await server.wait_closed()
+
+
+TOO_LARGE = b"SERVER_ERROR object too large for cache"
+
+
+@pytest.mark.parametrize("reply", (
+    TOO_LARGE, b"SERVER_ERROR out of memory", b"CLIENT_ERROR bad command line format",
+    b"ERROR", b"ERROR Too many open connections"))
+@pytest.mark.parametrize("call", UNEXPECTED_CALLS)
+async def test_error_reply(call: str, reply: bytes) -> None:
+    # The connection is kept after an error only if the next reply can be read
+    # after it. memcached skips the data of an item which is too large, but
+    # after another error it would take the data sent with a command for a
+    # command. A command which sends none is answered in one line. But with an
+    # error of its own, memcached may lose replies or close the connection,
+    # and it loses the replies it has not sent yet whenever a get fails.
+    if call in ("set", "cas"):
+        kept = reply == TOO_LARGE
+    elif call == "get":
+        kept = False
+    else:
+        kept = reply == b"ERROR" or reply.startswith(b"CLIENT_ERROR ")
+    connections = 0
+    first = True
+
+    async def handler(reader: asyncio.StreamReader,
+                      writer: asyncio.StreamWriter) -> None:
+        nonlocal connections, first
+        connections += 1
+        while line := await reader.readline():
+            if line.split()[0] in (b"set", b"cas"):
+                await reader.readline()  # The data block.
+            writer.write(reply + b"\r\n" if first else b"VERSION 1.2.3\r\n")
+            first = False
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = Client("127.0.0.1", port, pool_size=1)
+    func, message = UNEXPECTED_CALLS[call]
+    try:
+        with pytest.raises(ClientException) as excinfo:
+            await func(client)
+        assert excinfo.value.args == (
+            message, reply + b"\r\n" if call in ("get", "stats") else reply)
+        assert await client.version() == b"1.2.3"
+        assert connections == (1 if kept else 2)
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
+async def test_get_flag_handler_runs_after_reply_is_read(mcache_params: McacheParams) -> None:
+    # The handler doesn't hold the connection, which is kept if it fails.
+    in_use = []
+
+    async def set_handler(value: object) -> tuple[bytes, int]:
+        return b"flagged", 1
+
+    async def failing_handler(value: bytes, flags: int) -> object:
+        in_use.append(len(client._pool._in_use))
+        raise ValueError("handler failed")
+
+    client = FlagClient[object](pool_size=1, set_flag_handler=set_handler,
+                                get_flag_handler=failing_handler, **mcache_params)
+    plain_client = Client(pool_size=1, **mcache_params)
+    try:
+        await client.set(b"key:flagged", object())
+        conn = await client._pool.acquire()
+        client._pool.release(conn)
+        with pytest.raises(ValueError, match="handler failed"):
+            await client.get(b"key:flagged")
+        assert in_use == [0]
+        reacquired = await client._pool.acquire()
+        client._pool.release(reacquired)
+        assert reacquired is conn
+
+        conn = await plain_client._pool.acquire()
+        plain_client._pool.release(conn)
+        with pytest.raises(ClientException, match="received flags without handler"):
+            await plain_client.get(b"key:flagged")
+        reacquired = await plain_client._pool.acquire()
+        plain_client._pool.release(reacquired)
+        assert reacquired is conn
+    finally:
+        await client.close()
+        await plain_client.close()
 
 
 async def test_malformed_version_discards_connection() -> None:

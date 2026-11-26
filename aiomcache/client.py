@@ -1,10 +1,11 @@
 import asyncio
 import contextlib
 import datetime
+import functools
 import re
 import time
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Any, Generic, Literal, TypeVar, overload
 
 from . import constants as const
@@ -15,10 +16,116 @@ __all__ = ['Client']
 
 _T = TypeVar("_T")
 _U = TypeVar("_U")
+_R = TypeVar("_R")
 _Result = tuple[dict[bytes, bytes | _T], dict[bytes, _U]]
 
 _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
 _SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
+# Reads the reply to a request. It returns the exception for an error reply
+# which it read in full, instead of raising it, as the connection is intact.
+_ReplyReader = Callable[[asyncio.StreamReader], Awaitable[_R | ClientException]]
+
+
+def _is_recoverable_error(line: bytes | bytearray, *, has_data: bool) -> bool:
+    """Return True if line is an error reply that the next reply can be read after.
+
+    memcached skips the data of an item which it rejects as too large. After
+    another error, it would take the data sent with a command for a command.
+    And an error of its own, such as a lack of memory, may come with the loss
+    of replies which it had not sent yet, or before it closes the connection.
+    """
+    line = line.rstrip()
+    if has_data:
+        return line == b"SERVER_ERROR object too large for cache"
+    return line == b"ERROR" or line.startswith(b"CLIENT_ERROR ")
+
+
+async def _read_line(
+    parse: Callable[[bytearray], _R], has_data: bool, reader: asyncio.StreamReader
+) -> _R | ClientException:
+    """Read a one-line reply, returning what parse makes of it."""
+    response, line = bytearray(), b""
+    while not line.endswith(b"\r\n"):
+        line = await reader.readline()
+        if not line:
+            # readline() returns an empty string at EOF.
+            raise ClientException(
+                "Connection closed by the server before receiving a full response",
+            )
+        response.extend(line)
+    del response[-2:]
+    try:
+        return parse(response)
+    except ClientException as exc:
+        if _is_recoverable_error(response, has_data=has_data):
+            return exc
+        raise
+
+
+async def _read_values(
+    n_keys: int, with_cas: bool, reader: asyncio.StreamReader
+) -> dict[bytes, tuple[bytes, int, int | None]]:
+    """Read the reply to get or gets, returning each key's value, flags and cas."""
+    # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+    #        <data block>\r\n (if exists)
+    #        [...]
+    #        END\r\n
+    items: dict[bytes, tuple[bytes, int, int | None]] = {}
+    line = await reader.readline()
+
+    while line != b"END\r\n":
+        terms = line.split()
+
+        if terms and terms[0] == b"VALUE":  # exists
+            key = terms[1]
+            flags = int(terms[2])
+            length = int(terms[3])
+
+            val_bytes = (await reader.readexactly(length+2))[:-2]
+            if key in items:
+                raise ClientException("duplicate results from server")
+
+            items[key] = (val_bytes, flags, int(terms[4]) if with_cas else None)
+        else:
+            # Never a reply to read on from: memcached drops the replies which
+            # it has not sent yet when a get fails.
+            raise ClientException("get failed", line)
+
+        line = await reader.readline()
+
+    if len(items) > n_keys:
+        raise ClientException("received too many responses")
+
+    return items
+
+
+async def _read_stats(
+    reader: asyncio.StreamReader
+) -> dict[bytes, bytes | None] | ClientException:
+    """Read the reply to stats."""
+    # resp - STAT <name> <value>\r\n (one per result)
+    #        END\r\n
+    result: dict[bytes, bytes | None] = {}
+
+    resp = await reader.readline()
+    while resp != b"END\r\n":
+        terms = resp.split()
+
+        if len(terms) == 2 and terms[0] == b"STAT":
+            result[terms[1]] = None
+        elif len(terms) == 3 and terms[0] == b"STAT":
+            result[terms[1]] = terms[2]
+        elif len(terms) >= 3 and terms[0] == b"STAT":
+            result[terms[1]] = b" ".join(terms[2:])
+        else:
+            error = ClientException("stats failed", resp)
+            if _is_recoverable_error(resp, has_data=False):
+                return error
+            raise error
+
+        resp = await reader.readline()
+
+    return result
 
 
 class FlagClient(Generic[_T]):
@@ -143,28 +250,28 @@ class FlagClient(Generic[_T]):
             finally:
                 self._pool.release(conn, broken=broken)
 
-    @contextlib.asynccontextmanager
-    async def _execute_simple_command(self, *chunks: bytes) -> AsyncIterator[bytearray]:
-        """Send a command and yield its one-line reply.
+    async def _execute(self, chunks: Sequence[bytes], read_reply: _ReplyReader[_R]) -> _R:
+        """Send a request and return what read_reply makes of the reply.
 
-        The connection is held until the block ends, so check the reply inside
-        it: an exception discards the connection along with anything unread.
+        read_reply must read the whole reply: if it raises, the connection is
+        discarded along with anything unread.
         """
         async with self._connection() as conn:
-            response, line = bytearray(), b""
-
             conn.writer.writelines(chunks)
             await conn.writer.drain()
+            reply = await read_reply(conn.reader)
+        if isinstance(reply, ClientException):
+            raise reply
+        return reply
 
-            while not line.endswith(b"\r\n"):
-                line = await conn.reader.readline()
-                if not line:
-                    # readline() returns an empty string at EOF.
-                    raise ClientException(
-                        "Connection closed by the server before receiving a full response",
-                    )
-                response.extend(line)
-            yield response[:-2]
+    async def _execute_simple_command(
+        self, *chunks: bytes, parse: Callable[[bytearray], _R], has_data: bool = False
+    ) -> _R:
+        """Send a command and return what parse makes of its one-line reply.
+
+        parse must raise ClientException for a reply it doesn't expect.
+        """
+        return await self._execute(chunks, functools.partial(_read_line, parse, has_data))
 
     async def close(self) -> None:
         """Closes the sockets if its open."""
@@ -184,10 +291,6 @@ class FlagClient(Generic[_T]):
         self, *keys: bytes,
             with_cas: bool = True) -> _Result[_T, int | None]:
         # req  - get <key> [<key> ...]\r\n
-        # resp - VALUE <key> <flags> <bytes> [<cas unique>]\r\n
-        #        <data block>\r\n (if exists)
-        #        [...]
-        #        END\r\n
         if not keys:
             return {}, {}
 
@@ -202,44 +305,24 @@ class FlagClient(Generic[_T]):
 
     async def _retrieve(self, raw_command: bytes, n_keys: int,
                         with_cas: bool) -> _Result[_T, int | None]:
-        async with self._connection() as conn:
-            conn.writer.write(raw_command)
+        items = await self._execute(
+            (raw_command,), functools.partial(_read_values, n_keys, with_cas))
 
-            received: dict[bytes, bytes | _T] = {}
-            cas_tokens: dict[bytes, int | None] = {}
-            line = await conn.reader.readline()
+        received: dict[bytes, bytes | _T] = {}
+        cas_tokens: dict[bytes, int | None] = {}
+        # The flag handler runs once the reply is read, so that it doesn't
+        # hold the connection.
+        for key, (val_bytes, flags, cas_token) in items.items():
+            if flags:
+                if not self._get_flag_handler:
+                    raise ClientException("received flags without handler")
 
-            while line != b"END\r\n":
-                terms = line.split()
+                received[key] = await self._get_flag_handler(val_bytes, flags)
+            else:
+                received[key] = val_bytes
+            cas_tokens[key] = cas_token
 
-                if terms and terms[0] == b"VALUE":  # exists
-                    key = terms[1]
-                    flags = int(terms[2])
-                    length = int(terms[3])
-
-                    val_bytes = (await conn.reader.readexactly(length+2))[:-2]
-                    if key in received:
-                        raise ClientException("duplicate results from server")
-
-                    if flags:
-                        if not self._get_flag_handler:
-                            raise ClientException("received flags without handler")
-
-                        val: bytes | _T = await self._get_flag_handler(val_bytes, flags)
-                    else:
-                        val = val_bytes
-
-                    received[key] = val
-                    cas_tokens[key] = int(terms[4]) if with_cas else None
-                else:
-                    raise ClientException("get failed", line)
-
-                line = await conn.reader.readline()
-
-            if len(received) > n_keys:
-                raise ClientException("received too many responses")
-
-            return received, cas_tokens
+        return received, cas_tokens
 
     async def delete(self, key: bytes) -> bool:
         """Deletes a key/value pair from the server.
@@ -250,11 +333,13 @@ class FlagClient(Generic[_T]):
         """
         self._validate_key(key)
 
-        command = b'delete ' + key + b'\r\n'
-        async with self._execute_simple_command(command) as response:
+        def parse(response: bytearray) -> bool:
             if response not in (const.DELETED, const.NOT_FOUND):
                 raise ClientException("Memcached delete failed", response)
             return response == const.DELETED
+
+        command = b'delete ' + key + b'\r\n'
+        return await self._execute_simple_command(command, parse=parse)
 
     @overload
     async def get(self, key: bytes, default: None = ...) -> bytes | _T | None:
@@ -302,32 +387,10 @@ class FlagClient(Generic[_T]):
     async def stats(self, args: bytes | None = None) -> dict[bytes, bytes | None]:
         """Runs a stats command on the server."""
         # req  - stats [additional args]\r\n
-        # resp - STAT <name> <value>\r\n (one per result)
-        #        END\r\n
         if args is None:
             args = b''
 
-        async with self._connection() as conn:
-            conn.writer.write(b"".join((b"stats ", args, b"\r\n")))
-
-            result: dict[bytes, bytes | None] = {}
-
-            resp = await conn.reader.readline()
-            while resp != b"END\r\n":
-                terms = resp.split()
-
-                if len(terms) == 2 and terms[0] == b"STAT":
-                    result[terms[1]] = None
-                elif len(terms) == 3 and terms[0] == b"STAT":
-                    result[terms[1]] = terms[2]
-                elif len(terms) >= 3 and terms[0] == b"STAT":
-                    result[terms[1]] = b" ".join(terms[2:])
-                else:
-                    raise ClientException("stats failed", resp)
-
-                resp = await conn.reader.readline()
-
-        return result
+        return await self._execute((b"stats ", args, b"\r\n"), _read_stats)
 
     async def _storage_command(self, command: bytes, key: bytes,
                                value: bytes | _T, exptime: int = 0,
@@ -365,10 +428,14 @@ class FlagClient(Generic[_T]):
         header = b"%b %b %a %a %a%b\r\n" % (
             command, key, flags, exptime, len(value), cas_value
         )
-        async with self._execute_simple_command(header, value, b"\r\n") as resp:
+
+        def parse(resp: bytearray) -> bool:
             if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
                 raise ClientException(f"stats {command.decode()} failed", resp)
             return resp == const.STORED
+
+        return await self._execute_simple_command(
+            header, value, b"\r\n", parse=parse, has_data=True)
 
     async def set(self, key: bytes, value: bytes | _T,
                   exptime: int | datetime.datetime = 0) -> bool:
@@ -460,13 +527,15 @@ class FlagClient(Generic[_T]):
     async def _incr_decr(
         self, command: bytes, key: bytes, delta: int
     ) -> int | None:
-        cmd = b"%b %b %a\r\n" % (command, key, delta)
-        async with self._execute_simple_command(cmd) as resp:
+        def parse(resp: bytearray) -> int | None:
             if resp == const.NOT_FOUND:
                 return None
             if not resp.isdigit():
                 raise ClientException(f"Memcached {str(command)} command failed", resp)
             return int(resp)
+
+        cmd = b"%b %b %a\r\n" % (command, key, delta)
+        return await self._execute_simple_command(cmd, parse=parse)
 
     async def incr(self, key: bytes, increment: int = 1) -> int | None:
         """Command is used to change data for some item in-place,
@@ -514,11 +583,13 @@ class FlagClient(Generic[_T]):
         self._validate_key(key)
         exptime = self._validate_exptime(exptime)
 
-        cmd = b"touch %b %a\r\n" % (key, exptime)
-        async with self._execute_simple_command(cmd) as resp:
+        def parse(resp: bytearray) -> bool:
             if resp not in (const.TOUCHED, const.NOT_FOUND):
                 raise ClientException("Memcached touch failed", resp)
             return resp == const.TOUCHED
+
+        cmd = b"touch %b %a\r\n" % (key, exptime)
+        return await self._execute_simple_command(cmd, parse=parse)
 
     async def version(self) -> bytearray:
         """Current version of the server.
@@ -526,19 +597,21 @@ class FlagClient(Generic[_T]):
         :return: memcached version for the current server.
         """
 
-        command = b'version\r\n'
-        async with self._execute_simple_command(command) as response:
+        def parse(response: bytearray) -> bytearray:
             if not response.startswith(const.VERSION):
                 raise ClientException("Memcached version failed", response)
             version, number = response.rstrip(b"\r\n").split(maxsplit=1)
             return number
 
+        return await self._execute_simple_command(b'version\r\n', parse=parse)
+
     async def flush_all(self) -> None:
         """Its effect is to invalidate all existing items immediately"""
-        command = b'flush_all\r\n'
-        async with self._execute_simple_command(command) as response:
+        def parse(response: bytearray) -> None:
             if response != const.OK:
                 raise ClientException("Memcached flush_all failed", response)
+
+        await self._execute_simple_command(b'flush_all\r\n', parse=parse)
 
 
 class Client(FlagClient[bytes]):
