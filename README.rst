@@ -30,6 +30,25 @@ Version 0.8 introduces `FlagClient` which allows registering callbacks to
 set or process flags.  See `examples/simple_with_flag_handler.py`
 
 
+Pipelining
+----------
+
+Commands called on the client that ``pipeline()`` yields are sent without
+waiting for the replies to earlier ones. Commands which run at the same time
+then share a round trip to memcached, instead of taking one each:
+
+.. code:: python
+
+    async with mc.pipeline() as pipe:
+        stored, value, hits = await asyncio.gather(
+            pipe.set(b"some_key", b"Some value"),
+            pipe.get(b"other_key"),
+            pipe.incr(b"hits"),
+        )
+
+Each command returns or raises as usual. See `examples/pipeline.py`
+
+
 Running the tests
 -----------------
 

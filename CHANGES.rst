@@ -6,6 +6,9 @@ CHANGES
 
 Unreleased
 ==========
+- Add ``pipeline()``, which yields a client that sends its commands on one
+  connection without waiting for the replies to earlier ones. Commands called on
+  it at the same time, such as with ``asyncio.gather()``, share a round trip.
 - Keep the connection after an error reply which the next reply can be read
   after, instead of discarding it: ``SERVER_ERROR object too large for cache``,
   and ``CLIENT_ERROR`` or ``ERROR`` in reply to a command which sends no data.
