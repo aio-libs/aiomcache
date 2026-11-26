@@ -1,15 +1,17 @@
 import asyncio
 import contextlib
+import copy
 import datetime
 import functools
 import re
 import time
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from typing import Any, Generic, Literal, TypeVar, overload
+from typing import Any, Generic, Literal, Self, TypeVar, overload
 
 from . import constants as const
 from .exceptions import ClientException, ValidationException
+from .pipeline import Pipeline
 from .pool import Connection, MemcachePool
 
 __all__ = ['Client']
@@ -129,7 +131,8 @@ async def _read_stats(
 
 
 class FlagClient(Generic[_T]):
-    __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler", "_timeout")
+    __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler", "_timeout",
+                 "_pipeline")
 
     def __init__(self, host: str, port: int, *,
                  pool_size: int = 2, pool_minsize: int | None = None,
@@ -165,6 +168,8 @@ class FlagClient(Generic[_T]):
             host, port, minsize=pool_minsize, maxsize=pool_size,
             conn_args=conn_args, conn_timeout=conn_timeout)
         self._timeout = timeout
+        # Set on the clients that pipeline() yields.
+        self._pipeline: Pipeline | None = None
 
         self._get_flag_handler = get_flag_handler
         self._set_flag_handler = set_flag_handler
@@ -240,6 +245,10 @@ class FlagClient(Generic[_T]):
     @contextlib.asynccontextmanager
     async def _connection(self) -> AsyncIterator[Connection]:
         async with asyncio.timeout(self._timeout):
+            if self._pipeline is not None:
+                async with self._pipeline.exclusive() as conn:
+                    yield conn
+                return
             conn = await self._pool.acquire()
             # Assume the connection is unusable until the command completes.
             # An interrupted command may have left part of its response unread.
@@ -254,12 +263,17 @@ class FlagClient(Generic[_T]):
         """Send a request and return what read_reply makes of the reply.
 
         read_reply must read the whole reply: if it raises, the connection is
-        discarded along with anything unread.
+        discarded along with anything unread. In a pipeline, the request is
+        sent without waiting for the replies to earlier ones.
         """
-        async with self._connection() as conn:
-            conn.writer.writelines(chunks)
-            await conn.writer.drain()
-            reply = await read_reply(conn.reader)
+        if self._pipeline is None:
+            async with self._connection() as conn:
+                conn.writer.writelines(chunks)
+                await conn.writer.drain()
+                reply = await read_reply(conn.reader)
+        else:
+            async with asyncio.timeout(self._timeout):
+                reply = await (await self._pipeline.send(chunks, read_reply))
         if isinstance(reply, ClientException):
             raise reply
         return reply
@@ -272,6 +286,46 @@ class FlagClient(Generic[_T]):
         parse must raise ClientException for a reply it doesn't expect.
         """
         return await self._execute(chunks, functools.partial(_read_line, parse, has_data))
+
+    @contextlib.asynccontextmanager
+    async def pipeline(self) -> AsyncIterator[Self]:
+        """Yield a client that sends commands without waiting for earlier replies.
+
+        The client has the same methods as this one, and sends its commands on
+        one connection, which it holds until the block ends. Commands called
+        at the same time, such as with ``asyncio.gather()``, are sent together
+        and answered in the order they were called, so they share a round trip
+        instead of taking one each::
+
+            async with client.pipeline() as pipe:
+                stored, value = await asyncio.gather(
+                    pipe.set(b"key", b"value"), pipe.get(b"other"))
+
+        Each command returns or raises as it does outside the block, and
+        ``timeout`` applies to each: from when it is called until its reply is
+        read, which includes reading the replies before it. A command that
+        times out or is cancelled once it is called is sent all the same, and
+        may be carried out. If a reply can't be read or the connection is
+        lost, every command still waiting fails with ``ClientException``, as
+        the replies can't be told apart from then on.
+
+        When the block ends, the commands still waiting for a reply fail with
+        ``ClientException``, and the connection is closed instead of going
+        back to the pool. So wait for the commands inside the block.
+        """
+        if self._pipeline is not None:
+            yield self
+            return
+
+        async with asyncio.timeout(self._timeout):
+            conn = await self._pool.acquire()
+        client = copy.copy(self)
+        client._pipeline = pipeline = Pipeline(conn)
+        try:
+            yield client
+        finally:
+            self._pool.release(conn, broken=not pipeline.close())
+            await pipeline.wait_closed()
 
     async def close(self) -> None:
         """Closes the sockets if its open."""
@@ -310,8 +364,8 @@ class FlagClient(Generic[_T]):
 
         received: dict[bytes, bytes | _T] = {}
         cas_tokens: dict[bytes, int | None] = {}
-        # The flag handler runs once the reply is read, so that it doesn't
-        # hold the connection.
+        # The flag handler runs once the reply is read, so that it holds up
+        # neither the connection nor, in a pipeline, the replies after it.
         for key, (val_bytes, flags, cas_token) in items.items():
             if flags:
                 if not self._get_flag_handler:

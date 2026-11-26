@@ -176,6 +176,7 @@ async def test_acquire_task_cancellation(mcache_params: McacheParams) -> None:
     class TestClient(Client):
         def __init__(self, pool_size: int = 4):
             self._timeout = None
+            self._pipeline = None
             self._pool = MemcachePool(
                 minsize=pool_size, maxsize=pool_size,
                 **mcache_params)
