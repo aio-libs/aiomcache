@@ -469,6 +469,7 @@ KEY_COMMANDS: dict[str, _KeyCommand] = {
     "gets": lambda mc, k: mc.gets(k),
     "multi_get": lambda mc, k: mc.multi_get(b"key:other", k),
     "set": lambda mc, k: mc.set(k, b"v"),
+    "multi_set": lambda mc, k: mc.multi_set({b"key:other": b"v", k: b"v"}),
     "add": lambda mc, k: mc.add(k, b"v"),
     "replace": lambda mc, k: mc.replace(k, b"v"),
     "append": lambda mc, k: mc.append(k, b"v"),
@@ -505,6 +506,7 @@ INVALID_CALLS: dict[str, _InvalidCall] = {
     "gets": lambda mc: mc.gets(b"bad key"),
     "multi_get": lambda mc: mc.multi_get(b"key:other", b"bad key"),
     "set": lambda mc: mc.set(b"bad key", b"v"),
+    "multi_set": lambda mc: mc.multi_set({b"key:other": b"v", b"bad key": b"v"}),
     "add": lambda mc: mc.add(b"bad key", b"v"),
     "replace": lambda mc: mc.replace(b"bad key", b"v"),
     "append": lambda mc: mc.append(b"bad key", b"v"),
@@ -518,6 +520,10 @@ INVALID_CALLS: dict[str, _InvalidCall] = {
     "set-negative-exptime": lambda mc: mc.set(b"key", b"v", exptime=-1),
     "set-float-exptime": lambda mc: mc.set(b"key", b"v", exptime=1.5),  # type: ignore[arg-type]
     "set-no-flag-handler": lambda mc: mc.set(b"key", object()),  # type: ignore[arg-type]
+    "multi_set-negative-exptime": lambda mc: mc.multi_set({b"key": b"v"}, exptime=-1),
+    "multi_set-empty-negative-exptime": lambda mc: mc.multi_set({}, exptime=-1),
+    "multi_set-no-flag-handler": lambda mc: mc.multi_set(
+        {b"key:other": b"v", b"key": object()}),  # type: ignore[dict-item]
 }
 
 
@@ -730,6 +736,11 @@ async def _cas(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool
     return await mc.cas(key, b"value", cas_token, exptime)
 
 
+async def _multi_set(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
+    await mc.multi_set({key: b"value"}, exptime)
+    return True
+
+
 async def _touch(mc: Client, key: bytes, exptime: int | datetime.datetime) -> bool:
     await mc.set(key, b"value")
     return await mc.touch(key, exptime)
@@ -742,6 +753,7 @@ EXPTIME_COMMANDS: dict[str, _ExptimeCommand] = {
     "add": _add,
     "replace": _replace,
     "cas": _cas,
+    "multi_set": _multi_set,
     "touch": _touch,
 }
 
@@ -766,6 +778,8 @@ async def test_exptime_over_30_days(
 async def test_exptime_past_datetime(mcache: Client, exptime: datetime.datetime) -> None:
     key = b"key:exptime:past"
     assert await mcache.set(key, b"value", exptime) is True
+    assert await mcache.get(key) is None
+    await mcache.multi_set({key: b"value"}, exptime)
     assert await mcache.get(key) is None
 
 

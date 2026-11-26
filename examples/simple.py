@@ -9,6 +9,7 @@ async def hello_aiomcache() -> None:
     await mc.set(b"some_key", b"Some value")
     value = await mc.get(b"some_key")
     print(value)
+    await mc.multi_set({b"other_key": b"Other value", b"third_key": b"Third value"})
     values = await mc.multi_get(b"some_key", b"other_key")
     print(values)
     await mc.delete(b"another_key")

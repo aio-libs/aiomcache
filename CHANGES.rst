@@ -6,6 +6,10 @@ CHANGES
 
 Unreleased
 ==========
+- Add ``multi_set()`` to store several items, pipelined on one connection. It
+  raises ``ClientException`` if any item is not stored; when memcached rejects
+  only some (e.g. too large), the exception maps each rejected key to the
+  server's reply.
 - Drop what an interrupted command still had buffered when its connection is
   discarded, instead of sending it. memcached could carry out a ``set()`` after
   the caller got ``TimeoutError``.

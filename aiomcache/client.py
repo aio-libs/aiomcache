@@ -20,6 +20,11 @@ _Result = tuple[dict[bytes, bytes | _T], dict[bytes, _U]]
 _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
 _SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
 
+# multi_set() writes its commands in batches of at most this many items or
+# about this many bytes, whichever comes first.
+_MULTI_SET_BATCH_SIZE = 1000
+_MULTI_SET_BATCH_BYTES = 1024 * 1024
+
 
 class FlagClient(Generic[_T]):
     __slots__ = ("__weakref__", "_pool", "_get_flag_handler", "_set_flag_handler", "_timeout")
@@ -384,6 +389,95 @@ class FlagClient(Generic[_T]):
         """
         exptime = self._validate_exptime(exptime)
         return await self._storage_command(b"set", key, value, exptime)
+
+    async def multi_set(self, mapping: Mapping[bytes, bytes | _T],
+                        exptime: int | datetime.datetime = 0) -> None:
+        """Set several keys to values on the server.
+
+        The commands are pipelined on one connection. The client's
+        ``timeout`` covers waiting for a connection and sending every batch,
+        but not the flag handler, which runs for every item first; its results
+        are kept until the call ends. After a timeout or cancellation, some
+        items may still have been stored.
+
+        :param mapping: ``Mapping`` of ``bytes`` keys to the data to store.
+        :param exptime: ``int``, is the number of seconds until the items
+        expire. If it's 0, the items never expire. A timezone-aware
+        ``datetime`` is the time at which the items expire.
+        :raises: ``ValidationException`` before anything is sent.
+        ``ClientException`` if any item was not stored. If memcached
+        rejected only some items (e.g. too large), its second argument maps
+        each rejected key to the reply and every other item was stored;
+        otherwise it is the unexpected reply, and any item may not have been
+        stored.
+        """
+        exptime = self._validate_exptime(exptime)
+        # A copy, so a flag handler changing the mapping can't break the loop.
+        items = list(mapping.items())
+        if not items:
+            return
+
+        # Each batch is the keys and the chunks of their commands.
+        batches: list[tuple[list[bytes], list[bytes]]] = []
+        batch_bytes = 0
+        for key, value in items:
+            self._validate_key(key)
+            flags = 0
+            if not isinstance(value, bytes):
+                if self._set_flag_handler is None:
+                    raise ValidationException("flag handler must be set for non-byte values")
+                value, flags = await self._set_flag_handler(value)
+            if (not batches or len(batches[-1][0]) >= _MULTI_SET_BATCH_SIZE
+                    or batch_bytes >= _MULTI_SET_BATCH_BYTES):
+                batches.append(([], []))
+                batch_bytes = 0
+            keys, chunks = batches[-1]
+            keys.append(key)
+            header = b"set %b %a %a %a\r\n" % (key, flags, exptime, len(value))
+            chunks.extend((header, value, b"\r\n"))
+            batch_bytes += len(header) + len(value) + 2
+
+        rejected: dict[bytes, bytes] = {}
+        async with self._connection() as conn:
+            # Write each batch, then read the replies to the one before it,
+            # so the server always has commands to work on. Writing never
+            # waits (there is no drain()), so it can't block on memcached,
+            # which stops reading while its replies back up. Keeping only
+            # about two batches buffered bounds memory, and the time asyncio
+            # spends per write on the number of chunks buffered.
+            sent: list[bytes] = []
+            for keys, chunks in batches:
+                conn.writer.writelines(chunks)
+                await self._read_multi_set_replies(conn, sent, rejected)
+                sent = keys
+            await self._read_multi_set_replies(conn, sent, rejected)
+
+        # Every reply was read, so the connection was kept.
+        if rejected:
+            raise ClientException("Memcached multi_set failed for some keys", rejected)
+
+    async def _read_multi_set_replies(self, conn: Connection, keys: list[bytes],
+                                      rejected: dict[bytes, bytes]) -> None:
+        """Read the replies to the set commands for keys, in order.
+
+        Add each key memcached rejected to rejected, with its reply.
+        """
+        for key in keys:
+            line = await conn.reader.readline()
+            if not line.endswith(b"\r\n"):
+                raise ClientException(
+                    "Connection closed by the server before receiving a full response",
+                )
+            reply = line[:-2]
+            if reply == const.STORED:
+                continue
+            # memcached skips the data block of an item it rejects, so the
+            # replies still line up with the commands.
+            if reply.startswith(b"SERVER_ERROR "):
+                rejected[key] = reply
+            else:
+                # The stream can't be trusted, so the connection is discarded.
+                raise ClientException("Memcached multi_set failed", reply)
 
     async def cas(self, key: bytes, value: bytes | _T, cas_token: int,
                   exptime: int | datetime.datetime = 0) -> bool:
