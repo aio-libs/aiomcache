@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+import operator
 import re
 import time
 import warnings
@@ -19,6 +20,14 @@ _Result = tuple[dict[bytes, bytes | _T], dict[bytes, _U]]
 
 _GetFlagHandler = Callable[[bytes, int], Awaitable[_T]]
 _SetFlagHandler = Callable[[_T], Awaitable[tuple[bytes, int]]]
+
+
+def _int(value: int) -> int:
+    """Return value as an int, rejecting floats (IntEnum and IntFlag are accepted)."""
+    try:
+        return operator.index(value)
+    except TypeError:
+        raise ValidationException("not int", value) from None
 
 
 class FlagClient(Generic[_T]):
@@ -359,11 +368,11 @@ class FlagClient(Generic[_T]):
             if self._set_flag_handler is None:
                 raise ValidationException("flag handler must be set for non-byte values")
             value, flags = await self._set_flag_handler(value)
-        cas_value = b" %a" % cas if cas else b""
+        cas_value = b" %d" % _int(cas) if cas else b""
         # Only the header is built here; the value is written once a
         # connection is held, so waiting calls don't keep a copy of it.
-        header = b"%b %b %a %a %a%b\r\n" % (
-            command, key, flags, exptime, len(value), cas_value
+        header = b"%b %b %d %d %d%b\r\n" % (
+            command, key, _int(flags), exptime, len(value), cas_value
         )
         async with self._execute_simple_command(header, value, b"\r\n") as resp:
             if resp not in (const.STORED, const.NOT_STORED, const.EXISTS, const.NOT_FOUND):
@@ -460,7 +469,7 @@ class FlagClient(Generic[_T]):
     async def _incr_decr(
         self, command: bytes, key: bytes, delta: int
     ) -> int | None:
-        cmd = b"%b %b %a\r\n" % (command, key, delta)
+        cmd = b"%b %b %d\r\n" % (command, key, _int(delta))
         async with self._execute_simple_command(cmd) as resp:
             if resp == const.NOT_FOUND:
                 return None
@@ -514,7 +523,7 @@ class FlagClient(Generic[_T]):
         self._validate_key(key)
         exptime = self._validate_exptime(exptime)
 
-        cmd = b"touch %b %a\r\n" % (key, exptime)
+        cmd = b"touch %b %d\r\n" % (key, exptime)
         async with self._execute_simple_command(cmd) as resp:
             if resp not in (const.TOUCHED, const.NOT_FOUND):
                 raise ClientException("Memcached touch failed", resp)

@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import enum
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
@@ -778,3 +779,40 @@ async def test_exptime_timestamp_deprecated(mcache: Client, command: str) -> Non
     # The warning must point to the caller of the command.
     assert [w.filename for w in warned] == [__file__]
     assert await mcache.get(key) == b"value"
+
+
+class _TTL(enum.IntEnum):
+    HOUR = 3600
+
+
+class _Flags(enum.IntFlag):
+    PICKLE = 1
+
+
+async def test_int_enum_arguments(mcache: Client) -> None:
+    key = b"key:int_enum"
+    assert await mcache.set(key, b"1", exptime=_TTL.HOUR)
+    assert await mcache.touch(key, _TTL.HOUR)
+    assert await mcache.incr(key, _TTL.HOUR) == 3601
+    _, cas_token = await mcache.gets(key)
+    CasToken = enum.IntEnum("CasToken", {"TOKEN": cas_token})
+    assert await mcache.cas(key, b"2", CasToken.TOKEN)
+
+
+async def test_int_flag_from_flag_handler(mcache_params: McacheParams) -> None:
+    async def set_handler(value: str) -> tuple[bytes, int]:
+        return value.encode(), _Flags.PICKLE
+
+    client = FlagClient[str](set_flag_handler=set_handler, **mcache_params)
+    try:
+        assert await client.set(b"key:int_flag", "value")
+    finally:
+        await client.close()
+
+
+async def test_float_numbers_rejected(mcache: Client) -> None:
+    await mcache.set(b"key:float", b"1")
+    with pytest.raises(ValidationException):
+        await mcache.incr(b"key:float", 2.5)  # type: ignore[arg-type]
+    with pytest.raises(ValidationException):
+        await mcache.cas(b"key:float", b"2", 1.5)  # type: ignore[arg-type]

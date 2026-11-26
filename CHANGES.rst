@@ -40,6 +40,10 @@ Unreleased
 - Open new connections on demand up to ``pool_size`` when ``pool_minsize`` is
   smaller. Before, once ``pool_minsize`` connections were open, a command that
   found them all busy waited for one instead of opening another.
+- Send ``exptime``, flags, the cas token and the ``incr()``/``decr()`` delta in
+  decimal, so an ``IntEnum`` or ``IntFlag`` is sent as its value instead of
+  its ``repr()``. A ``float`` cas token, flags or delta now raises
+  ``ValidationException`` instead of being truncated.
 
 0.8.2 (2024-05-07)
 ==================
